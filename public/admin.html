@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feedback Hub Admin</title>
+<style>
+:root{--bg:#0b1016;--card:#121a23;--line:#263442;--muted:#8fa1b0;--acc:#6cc8ff;--ok:#75e0a2;--bad:#ff9292;--warn:#ffd37a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eef3f7;font:14px/1.45 system-ui,Segoe UI,Arial}
+header{display:flex;gap:10px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1016ee;backdrop-filter:blur(8px);z-index:2}
+header h1{margin:0;font-size:16px;flex:1}header input{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:#0b1118;color:#fff}
+button,.btn{border:0;border-radius:8px;padding:8px 12px;background:#1b2a38;color:#fff;cursor:pointer;font-weight:600}
+button.primary{background:#1d4e6b}
+main{display:grid;grid-template-columns:280px 1fr 320px;gap:14px;padding:14px;max-width:1400px;margin:0 auto}
+@media(max-width:980px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.muted{color:var(--muted);font-size:12px}
+.tag{display:inline-block;background:#263442;padding:2px 7px;border-radius:999px;margin:2px;font-size:11px}
+.tag.P0{background:#5a1e1e}.tag.P1{background:#5a3a12}.tag.ok{background:#163a28}
+.app{padding:10px;border:1px solid var(--line);border-radius:10px;margin:8px 0;cursor:pointer}
+.app:hover,.app.on{border-color:var(--acc)}
+.item{border-top:1px solid var(--line);padding:10px 0}
+.msg{white-space:pre-wrap}
+input,textarea,select{width:100%;margin:6px 0;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0b1118;color:#fff}
+#chatlog{height:220px;overflow:auto;background:#0b1118;border-radius:8px;padding:8px;font-size:13px}
+.kpi{display:flex;gap:8px;flex-wrap:wrap}.kpi b{display:block;font-size:18px}
+.k{flex:1;min-width:70px;background:#0b1118;border-radius:10px;padding:8px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠 SoloHost Feedback Hub</h1>
+  <input id="token" type="password" placeholder="Admin token">
+  <button class="primary" onclick="boot()">Load</button>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h3>Apps theo nhiệt phản hồi</h3>
+      <div class="kpi" id="kpis"></div>
+      <div id="apps">Chưa load.</div>
+      <h4>Thêm app</h4>
+      <input id="na_id" placeholder="app_id">
+      <input id="na_name" placeholder="Tên app">
+      <label class="muted"><input type="checkbox" id="na_fee"> Yêu cầu phí / ủng hộ</label>
+      <button onclick="addApp()">+ Thêm vào danh sách</button>
+    </div>
+  </section>
+  <section>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 id="ftitle">Feedback</h3>
+        <button onclick="loadPlan()">Kế hoạch nâng cấp</button>
+      </div>
+      <div id="plan" class="muted"></div>
+      <div id="list">Chưa load.</div>
+    </div>
+  </section>
+  <section>
+    <div class="card">
+      <h3>🆕 Publish update</h3>
+      <input id="ua" placeholder="App ID">
+      <input id="un" placeholder="App name">
+      <input id="uv" placeholder="Version">
+      <textarea id="ui" rows="4" placeholder="Raw notes"></textarea>
+      <button onclick="rewrite()">✨ AI rewrite</button>
+      <textarea id="ur" rows="4" placeholder="Short notice"></textarea>
+      <input id="ul" placeholder="Release URL">
+      <button class="primary" onclick="publish()">Publish</button>
+      <p id="um" class="muted"></p>
+    </div>
+    <div class="card">
+      <h3>AI assistant</h3>
+      <div id="chatlog"></div>
+      <input id="q" placeholder="Hỏi AI: app nào nóng nhất? nên fix gì?">
+      <button onclick="ask()">Gửi</button>
+    </div>
+    <div class="card">
+      <h3>Gửi thông báo</h3>
+      <input id="nb_app" placeholder="app_id">
+      <select id="nb_kind">
+        <option value="thanks">Cảm ơn</option>
+        <option value="payment_ok">Thanh toán OK</option>
+        <option value="unpaid_nudge">Nhắc ủng hộ</option>
+        <option value="update">Update</option>
+        <option value="custom">Tùy chỉnh</option>
+      </select>
+      <input id="nb_title" placeholder="Tiêu đề">
+      <textarea id="nb_body" rows="3" placeholder="Nội dung gửi client"></textarea>
+      <button onclick="broadcast()">Queue notice</button>
+    </div>
+  </section>
+</main>
+<script>
+let currentApp = "";
+function H(){return {Authorization:"Bearer "+token.value,"Content-Type":"application/json"}}
+async function api(url,opt={}){opt.headers={...(opt.headers||{}),...H()};const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw Error(j.error||"fail");return j}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+async function boot(){
+  try{
+    const o=await api("/api/admin/overview");
+    kpis.innerHTML=`<div class=k><b>${o.totals.feedback}</b><span class=muted>feedback</span></div>
+      <div class=k><b>${o.totals.new}</b><span class=muted>mới</span></div>
+      <div class=k><b>${o.totals.bugs}</b><span class=muted>bug</span></div>
+      <div class=k><b>${o.totals.payments}</b><span class=muted>ủng hộ</span></div>`;
+    apps.innerHTML=o.apps.map(a=>`<div class="app ${a.app_id===currentApp?'on':''}" onclick="selectApp('${esc(a.app_id)}','${esc(a.app_name)}')">
+      <b>${esc(a.app_name)}</b> <span class="muted">${esc(a.app_id)}</span><br>
+      <span class="tag">FB ${a.feedback_count}</span>
+      <span class="tag ${a.open_bugs?'P0':''}">bug ${a.open_bugs}</span>
+      <span class="tag">★ ${a.avg_rating||'-'}</span>
+      <span class="tag">heat ${a.heat}</span>
+      ${a.unpaid?'<span class="tag P1">chưa đóng phí</span>':''}
+      ${a.supporters?'<span class="tag ok">supporters '+a.supporters+'</span>':''}
+    </div>`).join("")||"<p class=muted>Chưa có app. Thêm mới hoặc đợi client gửi feedback.</p>";
+    await loadList();
+  }catch(e){apps.textContent="❌ "+e.message}
+}
+async function selectApp(id,name){currentApp=id;ua.value=id;un.value=name||id;nb_app.value=id;ftitle.textContent="Feedback · "+id;boot()}
+async function loadList(){
+  const q=currentApp?("?app_id="+encodeURIComponent(currentApp)):"";
+  const j=await api("/api/feedback"+q);
+  list.innerHTML=j.items.map(x=>`<div class=item>
+    <div class=muted>${esc(x.id)} · ${esc(x.created_at)} · ${esc(x.app_name)} ${esc(x.version)}</div>
+    <span class=tag>${esc(x.type)}</span><span class="tag ${esc(x.ai?.priority||'')}">${esc(x.ai?.priority||'')}</span>
+    <span class=tag>${esc(x.ai?.sentiment||'')}</span><span class=tag>${esc(x.status)}</span>
+    <div class=msg>${esc(x.message)}</div>
+    <div class=muted>${esc(x.ai?.suggested_action||'')}</div>
+    <select onchange="status('${encodeURIComponent(x.id)}',this.value)">
+      ${["NEW","REVIEWING","PLANNED","IN_PROGRESS","DONE","DECLINED"].map(s=>`<option ${s===x.status?"selected":""}>${s}</option>`).join("")}
+    </select>
+    <button onclick="classify('${x.id}')">AI classify</button>
+  </div>`).join("")||"<p class=muted>Không có feedback.</p>";
+}
+async function status(id,s){await api("/api/feedback/"+id,{method:"PATCH",body:JSON.stringify({status:s})});loadList()}
+async function classify(id){await api("/api/ai/classify",{method:"POST",body:JSON.stringify({id})});loadList()}
+async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify({app_id:na_id.value,app_name:na_name.value,fee_required:na_fee.checked})});na_id.value=na_name.value="";boot()}
+async function loadPlan(){
+  if(!currentApp){plan.textContent="Chọn một app trước.";return}
+  const j=await api("/api/apps/"+encodeURIComponent(currentApp)+"/plan");
+  const p=j.plan;
+  plan.innerHTML=`<b>${esc(p.headline)}</b><pre class=muted>${esc(p.builder_prompt)}</pre>`;
+}
+async function rewrite(){try{um.textContent="AI rewriting…";const j=await api("/api/ai/rewrite",{method:"POST",body:JSON.stringify({input:`App: ${un.value||ua.value}\nVersion: ${uv.value}\n${ui.value}`})});ur.value=j.text;um.textContent="✅ Review rồi mới Publish."}catch(e){um.textContent="❌ "+e.message}}
+async function publish(){try{await api("/api/updates",{method:"POST",body:JSON.stringify({app_id:ua.value,app_name:un.value,version:uv.value,notice:ur.value,release_url:ul.value,published:true})});um.textContent="✅ Published."}catch(e){um.textContent="❌ "+e.message}}
+async function ask(){
+  const msg=q.value.trim();if(!msg)return;
+  chatlog.innerHTML+=`<div><b>You</b> ${esc(msg)}</div>`;q.value="";
+  try{const j=await api("/ai/chat",{method:"POST",body:JSON.stringify({message:msg})});chatlog.innerHTML+=`<div><b>AI</b> ${esc(j.text||JSON.stringify(j))}</div>`}catch(e){chatlog.innerHTML+=`<div>❌ ${esc(e.message)}</div>`}
+  chatlog.scrollTop=chatlog.scrollHeight;
+}
+async function broadcast(){await api("/api/notices/broadcast",{method:"POST",body:JSON.stringify({app_id:nb_app.value,kind:nb_kind.value,title:nb_title.value,body:nb_body.value})});alert("Queued")}
+</script>
+</body></html>

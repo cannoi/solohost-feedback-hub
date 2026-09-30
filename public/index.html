@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SoloHost Feedback Hub</title>
+<style>
+body{margin:0;background:#0b1016;color:#eef3f7;font:15px system-ui,Arial}main{max-width:680px;margin:24px auto;padding:16px}
+.card{background:#121a23;border:1px solid #263442;border-radius:18px;padding:20px;margin-bottom:14px}
+h1,h2{margin:0 0 8px}p,small{color:#9fb0bf}label{display:block;margin:12px 0 6px;font-weight:600}
+input,select,textarea{box-sizing:border-box;width:100%;background:#0b1118;color:#fff;border:1px solid #304050;border-radius:10px;padding:11px;font:inherit}
+textarea{min-height:120px}button{width:100%;margin-top:12px;border:0;border-radius:10px;padding:12px;font-weight:700;cursor:pointer;background:#1d4e6b;color:#fff}
+.notice{border-left:3px solid #6cc8ff;padding-left:12px;margin:12px 0}.ok{color:#75e0a2}.err{color:#ff9292}.mono{word-break:break-all;font-family:monospace;font-size:12px}
+</style>
+</head>
+<body>
+<main>
+<div class="card">
+  <h1>💬 SoloHost Feedback</h1>
+  <p>Gửi ý kiến để app trên SoloHost tốt hơn. Không cần tài khoản.</p>
+  <form id="f">
+    <label>App ID</label><input id="app_id" required placeholder="vd. snake-classic">
+    <label>Tên app</label><input id="app_name" placeholder="Snake Classic">
+    <label>Version</label><input id="version" placeholder="1.2.0">
+    <label>Loại</label>
+    <select id="type">
+      <option value="bug">🐞 Lỗi</option>
+      <option value="idea">💡 Ý tưởng</option>
+      <option value="improvement">⚡ Cải thiện</option>
+      <option value="review">❤️ Đánh giá</option>
+    </select>
+    <label>Điểm (1–5)</label>
+    <select id="rating"><option value="0">Không chấm</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+    <label>Nội dung</label>
+    <textarea id="message" maxlength="4000" required placeholder="Cần sửa / thêm gì?"></textarea>
+    <small>Không gửi mật khẩu, API key, seed phrase.</small>
+    <button>Gửi phản hồi</button>
+    <p id="out"></p>
+  </form>
+</div>
+<div class="card"><h2>🆕 Cập nhật</h2><div id="updates">Đang tải…</div></div>
+<div class="card">
+  <h2>💛 Ủng hộ dự án</h2>
+  <p>Giữ các app SoloHost sống bằng Pi hoặc chuyển khoản.</p>
+  <button type="button" onclick="show('pi')">Pi Wallet</button>
+  <div id="pi" style="display:none"><p>Gửi Pi tới:</p><div class="mono" id="piaddr"></div><button type="button" onclick="copy('piaddr')">Copy address</button></div>
+  <button type="button" onclick="show('mb')">MB Bank</button>
+  <div id="mb" style="display:none"><p id="mbtext"></p><button type="button" onclick="copyText(document.getElementById('mbtext').innerText)">Copy</button></div>
+</div>
+<script src="/client/shfh-client.js"></script>
+<script>
+function show(x){const el=document.getElementById(x);el.style.display=el.style.display==="none"?"block":"none"}
+async function copy(id){copyText(document.getElementById(id).textContent)}
+async function copyText(x){try{await navigator.clipboard.writeText(x);alert("Copied")}catch{}}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function cfg(){const r=await fetch("/api/config"),j=await r.json();piaddr.textContent=j.donate.pi_wallet;mbtext.textContent=`${j.donate.mb_bank} — ${j.donate.mb_account} — ${j.donate.mb_name}`}
+async function loadUpdates(){const r=await fetch("/api/updates"),j=await r.json();updates.innerHTML=j.items.length?j.items.slice(0,8).map(x=>`<div class=notice><b>${esc(x.app_name)} ${esc(x.version)}</b><br>${esc(x.notice)}</div>`).join(""):"<p>Chưa có update.</p>"}
+f.onsubmit=async e=>{
+  e.preventDefault();out.textContent="Đang gửi…";
+  try{
+    const hub=SHFH.create({hubUrl:location.origin,appId:app_id.value,appName:app_name.value||app_id.value,version:version.value,platform:"web"});
+    const j=await hub.sendFeedback({type:type.value,message:message.value,rating:Number(rating.value)});
+    out.className="ok";out.textContent="✅ Đã nhận "+j.id+(j.notice?" — "+j.notice.title:"");
+    e.target.reset();
+  }catch(x){out.className="err";out.textContent="❌ "+x.message}
+};
+cfg();loadUpdates();
+</script>
+</main>
+</body></html>
