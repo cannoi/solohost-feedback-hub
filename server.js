@@ -5,6 +5,8 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createFileDb } from "./lib/store.js";
 import { TYPES, STATUSES, localClassify, scoreApp } from "./lib/classify.js";
+import { createSettings } from "./lib/settings.js";
+import { seedApps } from "./lib/catalog.js";
 import { createAiKernel, createActionRegistry, createCustomStore } from "./ai-app-kernel/src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,8 +23,36 @@ const MAX_BODY = 160 * 1024;
 const RATE_WINDOW = 60 * 60 * 1000;
 const RATE_LIMIT = 20;
 
-const db = createFileDb(path.join(__dirname, "data"));
+const dataDir = path.join(__dirname, "data");
+const db = createFileDb(dataDir);
+const settings = createSettings(dataDir, process.env);
+seedApps(db);
 const hits = new Map();
+const sessions = new Map();
+const SESSION_TTL = 12 * 60 * 60 * 1000;
+
+function parseCookie(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+function sessionOk(req) {
+  const sid = parseCookie(req).SHFH_SESSION;
+  if (!sid || !sessions.has(sid)) return false;
+  const exp = sessions.get(sid);
+  if (Date.now() > exp) { sessions.delete(sid); return false; }
+  sessions.set(sid, Date.now() + SESSION_TTL);
+  return true;
+}
+function setSession(res) {
+  const sid = crypto.randomBytes(24).toString("hex");
+  sessions.set(sid, Date.now() + SESSION_TTL);
+  res.setHeader("Set-Cookie", `SHFH_SESSION=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL / 1000}`);
+  return sid;
+}
 
 function clean(v, n = 4000) {
   return String(v ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, n);
@@ -34,14 +64,17 @@ function redact(s) {
     .replace(/\b(?:seed phrase|recovery phrase)\b[^.!?\n]{0,200}/gi, "[REDACTED_SENSITIVE]");
 }
 function send(res, code, obj) {
-  res.writeHead(code, {
+  const headers = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
-  });
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,OPTIONS",
+  };
+  const cookie = res.getHeader("Set-Cookie");
+  if (cookie) headers["Set-Cookie"] = cookie;
+  res.writeHead(code, headers);
   res.end(JSON.stringify(obj));
 }
 function text(res, code, body, type = "text/plain; charset=utf-8") {
@@ -56,8 +89,17 @@ function equal(a, b) {
   const aa = Buffer.from(a), bb = Buffer.from(b);
   return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
 }
-function admin(req) { return equal(bearer(req), ADMIN_TOKEN); }
-function ingest(req) { return !INGEST_TOKEN || equal(bearer(req), INGEST_TOKEN); }
+function admin(req) {
+  if (sessionOk(req)) return true;
+  const tok = bearer(req);
+  if (ADMIN_TOKEN && equal(tok, ADMIN_TOKEN)) return true;
+  if (tok && settings.checkPassword(tok)) return true;
+  return false;
+}
+function ingest(req) {
+  const need = settings.ingestToken();
+  return !need || equal(bearer(req), need);
+}
 function limited(req) {
   const k = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "x").split(",")[0].trim();
   const now = Date.now();
@@ -355,16 +397,64 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://localhost");
   if (req.method === "OPTIONS") return send(res, 204, { ok: true });
 
-  if (req.method === "GET" && u.pathname === "/api/health")
-    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.0.0", hub_id: HUB_ID, public_base_url: PUBLIC_BASE_URL || null });
+  if (req.method === "GET" && u.pathname === "/api/health") {
+    const s = settings.get();
+    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.1.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
+  }
 
-  if (req.method === "GET" && u.pathname === "/api/config")
+  if (req.method === "GET" && u.pathname === "/api/session") {
+    return send(res, 200, { ok: true, authed: admin(req), needs_setup: !settings.hasPassword() });
+  }
+
+  if (req.method === "POST" && u.pathname === "/api/setup") {
+    if (settings.hasPassword()) return send(res, 409, { ok: false, error: "Password already set" });
+    const { json } = await readBody(req);
+    const pw = clean(json?.password, 200);
+    if (pw.length < 6) return send(res, 400, { ok: false, error: "Password min 6 chars" });
+    settings.update({ admin_password: pw });
+    setSession(res);
+    return send(res, 201, { ok: true, setup: true });
+  }
+
+  if (req.method === "POST" && u.pathname === "/api/login") {
+    const { json } = await readBody(req);
+    const pw = String(json?.password || "");
+    const ok = settings.hasPassword()
+      ? settings.checkPassword(pw)
+      : (ADMIN_TOKEN && pw === ADMIN_TOKEN);
+    if (!ok) return send(res, 401, { ok: false, error: "Sai mật khẩu" });
+    setSession(res);
+    return send(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && u.pathname === "/api/logout") {
+    const sid = parseCookie(req).SHFH_SESSION;
+    if (sid) sessions.delete(sid);
+    res.setHeader("Set-Cookie", "SHFH_SESSION=; HttpOnly; Path=/; Max-Age=0");
+    return send(res, 200, { ok: true });
+  }
+
+  if (req.method === "GET" && u.pathname === "/api/settings") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    return send(res, 200, { ok: true, settings: settings.publicView() });
+  }
+
+  if (req.method === "PUT" && u.pathname === "/api/settings") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    const { json } = await readBody(req);
+    return send(res, 200, { ok: true, settings: settings.update(json || {}) });
+  }
+
+  if (req.method === "GET" && u.pathname === "/api/config") {
+    const s = settings.get();
+    const d = settings.publicDonate();
     return send(res, 200, {
-      ok: true, hub_id: HUB_ID, public_base_url: PUBLIC_BASE_URL || "", schema_version: "2.0",
-      donate: { pi_wallet: PI_WALLET, mb_bank: MB_BANK, mb_account: MB_ACCOUNT, mb_name: MB_NAME },
+      ok: true, hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || "", schema_version: "2.0",
+      donate: { pi_wallet: d.pi_wallet || PI_WALLET, mb_bank: d.mb_bank || MB_BANK, mb_account: d.mb_account || MB_ACCOUNT, mb_name: d.mb_name || MB_NAME },
       events: ["feedback", "payment", "usage"],
       types: TYPES,
     });
+  }
 
   if (req.method === "GET" && u.pathname === "/api/sdk.js")
     return serveFile(res, path.join(publicDir, "client/shfh-client.js"));
@@ -531,8 +621,10 @@ const server = http.createServer(async (req, res) => {
     return send(res, 201, { ok: true, item: addNotice({ ...json, kind: json.kind || "custom", title: json.title || "Thông báo" }) });
   }
 
-  if (req.method === "GET" && u.pathname === "/") return serveFile(res, path.join(publicDir, "index.html"));
-  if (req.method === "GET" && u.pathname === "/admin") return serveFile(res, path.join(publicDir, "admin.html"));
+  if (req.method === "GET" && (u.pathname === "/" || u.pathname === "/admin"))
+    return serveFile(res, path.join(publicDir, "admin.html"));
+  if (req.method === "GET" && (u.pathname === "/feedback" || u.pathname === "/public"))
+    return serveFile(res, path.join(publicDir, "index.html"));
   if (req.method === "GET" && u.pathname.startsWith("/client/")) return serveFile(res, path.join(publicDir, u.pathname));
   text(res, 404, "Not found");
 });

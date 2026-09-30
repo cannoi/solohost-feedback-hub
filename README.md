@@ -9,8 +9,9 @@ docker compose build
 docker compose up -d
 ```
 
-- Public: `http://SOLOHOST-IP:8090`
-- Admin: `http://SOLOHOST-IP:8090/admin`
+- Admin (mặc định): `http://SOLOHOST-IP:8090` — đăng nhập mật khẩu
+- Form công khai: `http://SOLOHOST-IP:8090/feedback`
+- Admin alias: `http://SOLOHOST-IP:8090/admin`
 - SDK: `http://SOLOHOST-IP:8090/api/sdk.js`
 
 Đặt `ADMIN_TOKEN` và `INGEST_TOKEN` dài, ngẫu nhiên. AI dùng `ai-app-kernel` (auto provider từ token / local OpenAI-compatible).

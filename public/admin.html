@@ -2,14 +2,14 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Feedback Hub Admin</title>
+<title>SoloHost Feedback Hub</title>
 <style>
-:root{--bg:#0b1016;--card:#121a23;--line:#263442;--muted:#8fa1b0;--acc:#6cc8ff;--ok:#75e0a2;--bad:#ff9292;--warn:#ffd37a}
+:root{--bg:#0b1016;--card:#121a23;--line:#263442;--muted:#8fa1b0;--acc:#6cc8ff;--ok:#75e0a2}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eef3f7;font:14px/1.45 system-ui,Segoe UI,Arial}
-header{display:flex;gap:10px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1016ee;backdrop-filter:blur(8px);z-index:2}
-header h1{margin:0;font-size:16px;flex:1}header input{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:#0b1118;color:#fff}
+header{display:flex;gap:8px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1016ee;backdrop-filter:blur(8px);z-index:2;flex-wrap:wrap}
+header h1{margin:0;font-size:16px;flex:1}
 button,.btn{border:0;border-radius:8px;padding:8px 12px;background:#1b2a38;color:#fff;cursor:pointer;font-weight:600}
-button.primary{background:#1d4e6b}
+button.primary{background:#1d4e6b}button.ghost{background:transparent;border:1px solid var(--line)}
 main{display:grid;grid-template-columns:280px 1fr 320px;gap:14px;padding:14px;max-width:1400px;margin:0 auto}
 @media(max-width:980px){main{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
@@ -24,20 +24,38 @@ input,textarea,select{width:100%;margin:6px 0;padding:8px;border-radius:8px;bord
 #chatlog{height:220px;overflow:auto;background:#0b1118;border-radius:8px;padding:8px;font-size:13px}
 .kpi{display:flex;gap:8px;flex-wrap:wrap}.kpi b{display:block;font-size:18px}
 .k{flex:1;min-width:70px;background:#0b1118;border-radius:10px;padding:8px;text-align:center}
+#gate{position:fixed;inset:0;background:#0b1016;display:flex;align-items:center;justify-content:center;z-index:9}
+#gate .box{width:min(420px,92vw);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px}
+#appwrap{display:none}#settingsPane{display:none;max-width:720px;margin:14px auto;padding:0 14px 24px}
+label.muted{display:block;margin-top:8px}
 </style>
 </head>
 <body>
+<div id="gate">
+  <div class="box">
+    <h2 id="gateTitle">Đăng nhập Feedback Hub</h2>
+    <p class="muted" id="gateHint">Nhập mật khẩu admin. Lần đầu: đặt mật khẩu mới (≥ 6 ký tự).</p>
+    <input id="pw" type="password" placeholder="Mật khẩu" autocomplete="current-password">
+    <input id="pw2" type="password" placeholder="Nhập lại mật khẩu" style="display:none">
+    <button class="primary" id="gateBtn" onclick="enter()">Vào dashboard</button>
+    <p id="gateErr" class="muted"></p>
+  </div>
+</div>
+
+<div id="appwrap">
 <header>
   <h1>🛠 SoloHost Feedback Hub</h1>
-  <input id="token" type="password" placeholder="Admin token">
-  <button class="primary" onclick="boot()">Load</button>
+  <button class="ghost" onclick="showDash()">Dashboard</button>
+  <button class="ghost" onclick="showSettings()">⚙ Settings</button>
+  <a class="btn ghost" href="/feedback" target="_blank" rel="noopener">Form công khai</a>
+  <button onclick="logout()">Đăng xuất</button>
 </header>
-<main>
+<main id="dash">
   <section>
     <div class="card">
-      <h3>Apps theo nhiệt phản hồi</h3>
+      <h3>Apps đang quản lý</h3>
       <div class="kpi" id="kpis"></div>
-      <div id="apps">Chưa load.</div>
+      <div id="apps">Đang tải…</div>
       <h4>Thêm app</h4>
       <input id="na_id" placeholder="app_id">
       <input id="na_name" placeholder="Tên app">
@@ -52,7 +70,7 @@ input,textarea,select{width:100%;margin:6px 0;padding:8px;border-radius:8px;bord
         <button onclick="loadPlan()">Kế hoạch nâng cấp</button>
       </div>
       <div id="plan" class="muted"></div>
-      <div id="list">Chưa load.</div>
+      <div id="list">Đang tải…</div>
     </div>
   </section>
   <section>
@@ -90,11 +108,90 @@ input,textarea,select{width:100%;margin:6px 0;padding:8px;border-radius:8px;bord
     </div>
   </section>
 </main>
+<div id="settingsPane">
+  <div class="card">
+    <h2>Settings</h2>
+    <p class="muted">Lưu trên máy SoloHost (`data/settings.json`). API key AI vẫn chỉ đặt bằng biến môi trường — không ghi secret vào file.</p>
+    <label class="muted">Hub ID</label><input id="s_hub">
+    <label class="muted">Public base URL</label><input id="s_url" placeholder="http://IP:8090">
+    <label class="muted">Ingest token (app client)</label><input id="s_ingest">
+    <h3>Donate</h3>
+    <input id="s_pi" placeholder="Pi wallet">
+    <input id="s_bank" placeholder="Ngân hàng">
+    <input id="s_acc" placeholder="Số TK">
+    <input id="s_name" placeholder="Chủ TK">
+    <h3>AI (không chứa API key)</h3>
+    <input id="s_prov" placeholder="provider: xai / openai / local / …">
+    <input id="s_model" placeholder="model">
+    <input id="s_local" placeholder="LOCAL_AI_BASE_URL">
+    <p class="muted" id="s_keyhint"></p>
+    <h3>Đổi mật khẩu đăng nhập</h3>
+    <input id="s_pw" type="password" placeholder="Mật khẩu mới (trống = giữ nguyên)">
+    <button class="primary" onclick="saveSettings()">Lưu settings</button>
+    <p id="s_msg" class="muted"></p>
+  </div>
+</div>
+</div>
 <script>
 let currentApp = "";
-function H(){return {Authorization:"Bearer "+token.value,"Content-Type":"application/json"}}
-async function api(url,opt={}){opt.headers={...(opt.headers||{}),...H()};const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw Error(j.error||"fail");return j}
+let needsSetup = false;
+function H(){return {"Content-Type":"application/json"}}
+async function api(url,opt={}){
+  opt.credentials="include";
+  opt.headers={...(opt.headers||{}),...H()};
+  const r=await fetch(url,opt);
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error(j.error||("HTTP "+r.status));
+  return j;
+}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+async function checkSession(){
+  const s=await fetch("/api/session",{credentials:"include"}).then(r=>r.json());
+  needsSetup=!!s.needs_setup;
+  if(needsSetup){
+    gateTitle.textContent="Đặt mật khẩu admin";
+    gateHint.textContent="Chưa có mật khẩu. Đặt mật khẩu (≥ 6 ký tự) để khóa dashboard.";
+    pw2.style.display="block";
+    gateBtn.textContent="Tạo mật khẩu & vào";
+  }
+  if(s.authed){openApp();return}
+}
+async function enter(){
+  gateErr.textContent="";
+  try{
+    if(needsSetup){
+      if(pw.value.length<6) throw Error("Mật khẩu tối thiểu 6 ký tự");
+      if(pw.value!==pw2.value) throw Error("Hai mật khẩu không khớp");
+      await api("/api/setup",{method:"POST",body:JSON.stringify({password:pw.value})});
+    }else{
+      await api("/api/login",{method:"POST",body:JSON.stringify({password:pw.value})});
+    }
+    openApp();
+  }catch(e){gateErr.textContent="❌ "+e.message}
+}
+async function logout(){await api("/api/logout",{method:"POST"});location.reload()}
+function openApp(){gate.style.display="none";appwrap.style.display="block";boot()}
+function showDash(){dash.style.display="grid";settingsPane.style.display="none"}
+async function showSettings(){
+  dash.style.display="none";settingsPane.style.display="block";
+  const j=await api("/api/settings");
+  const s=j.settings;
+  s_hub.value=s.hub_id||"";s_url.value=s.public_base_url||"";s_ingest.value=s.ingest_token||"";
+  s_pi.value=s.donate?.pi_wallet||"";s_bank.value=s.donate?.mb_bank||"";s_acc.value=s.donate?.mb_account||"";s_name.value=s.donate?.mb_name||"";
+  s_prov.value=s.ai?.provider||"";s_model.value=s.ai?.model||"";s_local.value=s.ai?.local_base_url||"";
+  s_keyhint.textContent=s.ai?.has_api_key?"API key đang có trong môi trường Docker/env.":"Chưa thấy API key trong env. Kernel sẽ dùng local nếu có URL.";
+}
+async function saveSettings(){
+  try{
+    const body={hub_id:s_hub.value,public_base_url:s_url.value,ingest_token:s_ingest.value,
+      donate:{pi_wallet:s_pi.value,mb_bank:s_bank.value,mb_account:s_acc.value,mb_name:s_name.value},
+      ai:{provider:s_prov.value,model:s_model.value,local_base_url:s_local.value}};
+    if(s_pw.value) body.admin_password=s_pw.value;
+    await api("/api/settings",{method:"PUT",body:JSON.stringify(body)});
+    s_msg.textContent="✅ Đã lưu.";s_pw.value="";
+  }catch(e){s_msg.textContent="❌ "+e.message}
+}
 
 async function boot(){
   try{
@@ -105,13 +202,14 @@ async function boot(){
       <div class=k><b>${o.totals.payments}</b><span class=muted>ủng hộ</span></div>`;
     apps.innerHTML=o.apps.map(a=>`<div class="app ${a.app_id===currentApp?'on':''}" onclick="selectApp('${esc(a.app_id)}','${esc(a.app_name)}')">
       <b>${esc(a.app_name)}</b> <span class="muted">${esc(a.app_id)}</span><br>
+      <span class="tag">${esc(a.category||'')}</span>
       <span class="tag">FB ${a.feedback_count}</span>
       <span class="tag ${a.open_bugs?'P0':''}">bug ${a.open_bugs}</span>
       <span class="tag">★ ${a.avg_rating||'-'}</span>
       <span class="tag">heat ${a.heat}</span>
       ${a.unpaid?'<span class="tag P1">chưa đóng phí</span>':''}
       ${a.supporters?'<span class="tag ok">supporters '+a.supporters+'</span>':''}
-    </div>`).join("")||"<p class=muted>Chưa có app. Thêm mới hoặc đợi client gửi feedback.</p>";
+    </div>`).join("")||"<p class=muted>Chưa có app.</p>";
     await loadList();
   }catch(e){apps.textContent="❌ "+e.message}
 }
@@ -137,8 +235,7 @@ async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify
 async function loadPlan(){
   if(!currentApp){plan.textContent="Chọn một app trước.";return}
   const j=await api("/api/apps/"+encodeURIComponent(currentApp)+"/plan");
-  const p=j.plan;
-  plan.innerHTML=`<b>${esc(p.headline)}</b><pre class=muted>${esc(p.builder_prompt)}</pre>`;
+  plan.innerHTML=`<b>${esc(j.plan.headline)}</b><pre class=muted>${esc(j.plan.builder_prompt)}</pre>`;
 }
 async function rewrite(){try{um.textContent="AI rewriting…";const j=await api("/api/ai/rewrite",{method:"POST",body:JSON.stringify({input:`App: ${un.value||ua.value}\nVersion: ${uv.value}\n${ui.value}`})});ur.value=j.text;um.textContent="✅ Review rồi mới Publish."}catch(e){um.textContent="❌ "+e.message}}
 async function publish(){try{await api("/api/updates",{method:"POST",body:JSON.stringify({app_id:ua.value,app_name:un.value,version:uv.value,notice:ur.value,release_url:ul.value,published:true})});um.textContent="✅ Published."}catch(e){um.textContent="❌ "+e.message}}
@@ -149,5 +246,7 @@ async function ask(){
   chatlog.scrollTop=chatlog.scrollHeight;
 }
 async function broadcast(){await api("/api/notices/broadcast",{method:"POST",body:JSON.stringify({app_id:nb_app.value,kind:nb_kind.value,title:nb_title.value,body:nb_body.value})});alert("Queued")}
+checkSession();
+pw.addEventListener("keydown",e=>{if(e.key==="Enter")enter()});
 </script>
 </body></html>

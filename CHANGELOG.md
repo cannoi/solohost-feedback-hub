@@ -1,3 +1,11 @@
+# v2.1.0 — 2026-09-30
+
+- `/` mặc định là UI admin (form công khai chuyển sang `/feedback`)
+- Đăng nhập mật khẩu + session cookie 12h; lần đầu setup password
+- Settings trong dashboard: hub URL, ingest token, donate, AI endpoint, đổi mật khẩu
+- Catalog seed 9 app SoloHost thật để quản lý ngay
+- API key AI không lưu trong settings.json (vẫn env)
+
 # v2.0.0 — 2026-09-30
 
 - Admin dashboard 3 cột: rank app theo heat/bug/rating, inbox, AI + publish + notice
