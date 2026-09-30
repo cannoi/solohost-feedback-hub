@@ -1,3 +1,11 @@
+# v2.2.0 — 2026-10-01
+
+- Xuất / nhập danh sách app (`/api/apps/export`, `/api/apps/import`)
+- `/api/client-policy` — app chỉ gọi sync(); rule phí + update + copy nằm trên Hub
+- SDK 2.2: payment states, installed_at vs published_at, offline queue, `sync()`
+- Module tích hợp: `module/shfh-client.js` + `module/INTEGRATE_ONCE.md`
+- Bảo mật: chặn path traversal `/client/`, rate-limit login, CORS chỉ API public, khóa `/ai` trừ logo, header nosniff/frame/referrer
+
 # v2.1.0 — 2026-09-30
 
 - `/` mặc định là UI admin (form công khai chuyển sang `/feedback`)

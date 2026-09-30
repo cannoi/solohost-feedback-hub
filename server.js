@@ -63,15 +63,31 @@ function redact(s) {
     .replace(/\b(?:api[_ -]?key|token|secret|password|private[_ -]?key)\s*[:=]\s*[^\s,;]{8,}/gi, "$1=[REDACTED_SECRET]")
     .replace(/\b(?:seed phrase|recovery phrase)\b[^.!?\n]{0,200}/gi, "[REDACTED_SENSITIVE]");
 }
-function send(res, code, obj) {
+const PUBLIC_API = new Set([
+  "/api/health", "/api/config", "/api/sdk.js", "/api/client-policy",
+  "/api/feedback", "/api/notices", "/api/updates", "/api/session",
+]);
+function isPublicPath(p) {
+  if (PUBLIC_API.has(p)) return true;
+  if (p.startsWith("/api/notices/")) return true;
+  if (p === "/api/sdk.js" || p.startsWith("/client/")) return true;
+  return false;
+}
+let activePath = "";
+function send(res, code, obj, reqPath) {
   const headers = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,OPTIONS",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
   };
+  const p = reqPath || activePath;
+  if (isPublicPath(p)) {
+    headers["Access-Control-Allow-Origin"] = "*";
+    headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type";
+    headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,OPTIONS";
+  }
   const cookie = res.getHeader("Set-Cookie");
   if (cookie) headers["Set-Cookie"] = cookie;
   res.writeHead(code, headers);
@@ -100,12 +116,15 @@ function ingest(req) {
   const need = settings.ingestToken();
   return !need || equal(bearer(req), need);
 }
-function limited(req) {
-  const k = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "x").split(",")[0].trim();
+function clientKey(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "x").split(",")[0].trim();
+}
+function limited(req, max = RATE_LIMIT, windowMs = RATE_WINDOW, bucket = "ing") {
+  const k = bucket + ":" + clientKey(req);
   const now = Date.now();
-  const a = (hits.get(k) || []).filter((t) => now - t < RATE_WINDOW);
+  const a = (hits.get(k) || []).filter((t) => now - t < windowMs);
   a.push(now); hits.set(k, a);
-  return a.length > RATE_LIMIT;
+  return a.length > max;
 }
 function readBody(req) {
   return new Promise((resolve) => {
@@ -201,7 +220,11 @@ function ingestEvent(p, req) {
       paid: Boolean(p.license?.paid),
       plan: clean(p.license?.plan, 40) || "free",
       txn_id: clean(p.license?.txn_id, 120),
+      state: clean(p.license?.state, 40) || (p.license?.paid ? "supporter" : "unknown"),
+      method: clean(p.license?.method, 40),
+      paid_until: clean(p.license?.paid_until, 40),
     },
+    installed_at: clean(p.installed_at, 40),
     locale: clean(p.locale, 12) || "vi",
     user_agent: clean(req.headers["user-agent"], 300),
     created_at: new Date().toISOString(),
@@ -373,7 +396,10 @@ function serveFile(res, file) {
 }
 
 async function handleAi(req, res, rest, method) {
-  if (!admin(req) && method !== "GET") return send(res, 401, { ok: false, error: "Unauthorized" });
+  if (rest === "/logo.png" && method === "GET") {
+    return serveFile(res, path.join(__dirname, "ai-app-kernel/assets/ai-logo.png"));
+  }
+  if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
   try {
     if (method === "GET" && rest === "/health") return send(res, 200, { ok: true, module: "ai-app-kernel" });
     if (method === "GET" && rest === "/schema") return send(res, 200, { schema: kernel.schema, collections: await kernel.store.listCollections() });
@@ -395,11 +421,12 @@ async function handleAi(req, res, rest, method) {
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://localhost");
+  activePath = u.pathname;
   if (req.method === "OPTIONS") return send(res, 204, { ok: true });
 
   if (req.method === "GET" && u.pathname === "/api/health") {
     const s = settings.get();
-    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.1.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
+    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.2.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
   }
 
   if (req.method === "GET" && u.pathname === "/api/session") {
@@ -417,6 +444,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && u.pathname === "/api/login") {
+    if (limited(req, 8, 15 * 60 * 1000, "login")) return send(res, 429, { ok: false, error: "Too many login attempts" });
     const { json } = await readBody(req);
     const pw = String(json?.password || "");
     const ok = settings.hasPassword()
@@ -453,6 +481,28 @@ const server = http.createServer(async (req, res) => {
       donate: { pi_wallet: d.pi_wallet || PI_WALLET, mb_bank: d.mb_bank || MB_BANK, mb_account: d.mb_account || MB_ACCOUNT, mb_name: d.mb_name || MB_NAME },
       events: ["feedback", "payment", "usage"],
       types: TYPES,
+      schema_version: "2.2",
+      payment_states: ["free", "unpaid", "pending", "paid", "supporter", "expired", "waived", "unknown"],
+    });
+  }
+
+  if (req.method === "GET" && u.pathname === "/api/client-policy") {
+    const appId = clean(u.searchParams.get("app_id"), 120);
+    const app = db.read("apps").find((a) => a.app_id === appId) || { app_id: appId || "unknown", fee_required: false, app_name: appId };
+    const latest = db.read("updates").filter((x) => x.published && (!appId || x.app_id === appId))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+    const d = settings.publicDonate();
+    return send(res, 200, {
+      ok: true,
+      schema_version: "2.2",
+      app_id: app.app_id,
+      app_name: app.app_name,
+      fee_required: Boolean(app.fee_required),
+      current_version: app.current_version || "",
+      latest_update: latest,
+      donate: { pi_wallet: d.pi_wallet || PI_WALLET, mb_bank: d.mb_bank || MB_BANK, mb_account: d.mb_account || MB_ACCOUNT, mb_name: d.mb_name || MB_NAME },
+      templates: templates(),
+      payment_states: ["free", "unpaid", "pending", "paid", "supporter", "expired", "waived", "unknown"],
     });
   }
 
@@ -548,6 +598,37 @@ const server = http.createServer(async (req, res) => {
     return send(res, 201, { ok: true, item: db.upsertApp(json) });
   }
 
+  if (req.method === "GET" && u.pathname === "/api/apps/export") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    const payload = {
+      kind: "solohost-feedback-hub-apps",
+      version: "2.2",
+      exported_at: new Date().toISOString(),
+      items: db.read("apps"),
+    };
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": "attachment; filename=\"solohost-apps.json\"",
+      "Cache-Control": "no-store",
+    });
+    return res.end(JSON.stringify(payload, null, 2));
+  }
+
+  if (req.method === "POST" && u.pathname === "/api/apps/import") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    const { json, too, bad } = await readBody(req);
+    if (too || bad || !json) return send(res, 400, { ok: false, error: "Invalid JSON" });
+    const items = Array.isArray(json) ? json : json.items;
+    if (!Array.isArray(items)) return send(res, 400, { ok: false, error: "Expected {items:[]} or array" });
+    const replace = json.replace === true;
+    if (replace) db.write("apps", []);
+    let upserted = 0;
+    for (const row of items.slice(0, 500)) {
+      if (row && row.app_id) { db.upsertApp(row); upserted += 1; }
+    }
+    return send(res, 200, { ok: true, upserted, total: db.read("apps").length, replaced: replace });
+  }
+
   if (req.method === "GET" && u.pathname.startsWith("/api/apps/") && u.pathname.endsWith("/plan")) {
     if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
     const appId = decodeURIComponent(u.pathname.split("/")[3]);
@@ -625,7 +706,11 @@ const server = http.createServer(async (req, res) => {
     return serveFile(res, path.join(publicDir, "admin.html"));
   if (req.method === "GET" && (u.pathname === "/feedback" || u.pathname === "/public"))
     return serveFile(res, path.join(publicDir, "index.html"));
-  if (req.method === "GET" && u.pathname.startsWith("/client/")) return serveFile(res, path.join(publicDir, u.pathname));
+  if (req.method === "GET" && u.pathname.startsWith("/client/")) {
+    const name = path.basename(u.pathname);
+    if (!/^[a-zA-Z0-9._-]+\.js$/.test(name)) return text(res, 404, "Not found");
+    return serveFile(res, path.join(publicDir, "client", name));
+  }
   text(res, 404, "Not found");
 });
 

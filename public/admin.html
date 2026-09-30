@@ -61,6 +61,8 @@ label.muted{display:block;margin-top:8px}
       <input id="na_name" placeholder="Tên app">
       <label class="muted"><input type="checkbox" id="na_fee"> Yêu cầu phí / ủng hộ</label>
       <button onclick="addApp()">+ Thêm vào danh sách</button>
+      <button onclick="exportApps()">Xuất file app</button>
+      <label class="muted">Nhập file JSON<input type="file" id="imp" accept="application/json" onchange="importApps(event)"></label>
     </div>
   </section>
   <section>
@@ -232,6 +234,23 @@ async function loadList(){
 async function status(id,s){await api("/api/feedback/"+id,{method:"PATCH",body:JSON.stringify({status:s})});loadList()}
 async function classify(id){await api("/api/ai/classify",{method:"POST",body:JSON.stringify({id})});loadList()}
 async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify({app_id:na_id.value,app_name:na_name.value,fee_required:na_fee.checked})});na_id.value=na_name.value="";boot()}
+async function exportApps(){
+  const r=await fetch("/api/apps/export",{credentials:"include"});
+  if(!r.ok){alert("Không xuất được");return}
+  const blob=await r.blob(); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="solohost-apps.json"; a.click();
+}
+async function importApps(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  try{
+    const json=JSON.parse(await f.text());
+    const replace=confirm("OK = ghi đè danh sách. Cancel = gộp/cập nhật.");
+    json.replace=replace;
+    await api("/api/apps/import",{method:"POST",body:JSON.stringify(json)});
+    boot();
+  }catch(e){alert(e.message)}
+  ev.target.value="";
+}
 async function loadPlan(){
   if(!currentApp){plan.textContent="Chọn một app trước.";return}
   const j=await api("/api/apps/"+encodeURIComponent(currentApp)+"/plan");
