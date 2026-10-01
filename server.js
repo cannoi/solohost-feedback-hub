@@ -8,6 +8,7 @@ import { TYPES, STATUSES, localClassify, scoreApp } from "./lib/classify.js";
 import { createSettings } from "./lib/settings.js";
 import { catalogPublic, detectProviderFromToken, modelsFor } from "./lib/ai-catalog.js";
 import { createAiKernel, createActionRegistry, createCustomStore } from "./ai-app-kernel/src/index.js";
+import { discoverModels } from "./ai-app-kernel/src/router.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8090);
@@ -27,10 +28,18 @@ const dataDir = path.join(__dirname, "data");
 function applyAiEnv(s) {
   const st = s || (typeof settings !== "undefined" ? settings.get() : null);
   if (!st) return;
-  if (st.ai?.provider) process.env.AI_PROVIDER = st.ai.provider;
+  const ids = ["xai", "openai", "gemini", "openrouter", "mistral", "deepseek", "groq"];
+  for (const id of ids) delete process.env[`${id.toUpperCase()}_API_KEY`];
+  const provider = String(st.ai?.provider || "").toLowerCase();
+  if (provider) process.env.AI_PROVIDER = provider;
   if (st.ai?.model) process.env.AI_MODEL = st.ai.model;
   if (st.ai?.local_base_url) process.env.LOCAL_AI_BASE_URL = st.ai.local_base_url;
-  if (st.ai?.api_key) process.env.AI_API_KEY = st.ai.api_key;
+  if (st.ai?.api_key) {
+    process.env.AI_API_KEY = st.ai.api_key;
+    if (provider && !["ollama", "lmstudio", "local"].includes(provider)) {
+      process.env[`${provider.toUpperCase()}_API_KEY`] = st.ai.api_key;
+    }
+  }
 }
 const db = createFileDb(dataDir);
 const settings = createSettings(dataDir, process.env);
@@ -335,7 +344,7 @@ const kernel = createAiKernel({
   schema: {
     name: "solohost-feedback-hub",
     collections: [
-      { name: "apps", fields: ["app_id", "app_name", "category", "status", "fee_required"] },
+      { name: "apps", fields: ["app_id", "app_name", "category", "status", "fee_required", "current_version"] },
       { name: "feedback", fields: ["id", "app_id", "type", "message", "status", "rating", "ai"] },
       { name: "updates", fields: ["id", "app_id", "version", "notice", "published"] },
       { name: "notices", fields: ["id", "app_id", "kind", "title", "body", "read"] },
@@ -345,6 +354,12 @@ const kernel = createAiKernel({
   store: storeAdapter,
   actions,
   baseUrl: process.env.LOCAL_AI_BASE_URL || process.env.AI_BASE_URL || "",
+  system: `You are the SoloHost Feedback Hub controller.
+Classify feedback, rank apps, and draft the smallest safe upgrade.
+Never invent collection names, features, or payment confirmations.
+Never expose API keys or tokens.
+Reply in the user's language.
+After tools: ✅ Done / ⚠️ Not completed / 👤 User action`,
 });
 
 function rankedApps() {
@@ -433,7 +448,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && u.pathname === "/api/health") {
     const s = settings.get();
-    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.3.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
+    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.4.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
   }
 
   if (req.method === "GET" && u.pathname === "/api/session") {
@@ -491,6 +506,21 @@ const server = http.createServer(async (req, res) => {
     const token = String(json?.token || "");
     const provider = detectProviderFromToken(token);
     return send(res, 200, { ok: true, provider, models: modelsFor(provider || json?.provider) });
+  }
+
+  if (req.method === "POST" && u.pathname === "/api/settings/test-ai") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    const { json } = await readBody(req);
+    const st = settings.get();
+    const provider = String(json?.provider || st.ai?.provider || detectProviderFromToken(json?.token) || "").toLowerCase();
+    const token = String(json?.token || st.ai?.api_key || "");
+    if (!provider) return send(res, 400, { ok: false, error: "Choose a provider first." });
+    if (!token && !["ollama", "lmstudio", "local"].includes(provider)) return send(res, 400, { ok: false, error: "Paste an API token." });
+    const models = await discoverModels({ provider, apiKey: token, baseUrl: json?.local_base_url || st.ai?.local_base_url || "" });
+    if (!models.length && !["ollama", "lmstudio", "local"].includes(provider)) {
+      return send(res, 200, { ok: false, provider, models: modelsFor(provider), warning: "Provider did not list models. Token may be invalid, or this provider has no /models endpoint. Suggested models are still usable." });
+    }
+    return send(res, 200, { ok: true, provider, models: models.length ? models : modelsFor(provider), verified: Boolean(models.length) });
   }
 
   if (req.method === "GET" && u.pathname === "/api/config") {
@@ -615,7 +645,9 @@ const server = http.createServer(async (req, res) => {
     if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
     const { json } = await readBody(req);
     if (!json?.app_id) return send(res, 400, { ok: false, error: "app_id required" });
-    return send(res, 201, { ok: true, item: db.upsertApp(json) });
+    const id = clean(json.app_id, 80).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(id)) return send(res, 400, { ok: false, error: "app_id must be a slug: a-z 0-9 . _ -" });
+    return send(res, 201, { ok: true, item: db.upsertApp({ ...json, app_id: id, status: json.status || "active", current_version: json.current_version || "" }) });
   }
 
   if (req.method === "GET" && u.pathname === "/api/apps/export") {

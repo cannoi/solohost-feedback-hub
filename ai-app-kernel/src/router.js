@@ -73,6 +73,8 @@ export function collectAvailableKeys() {
     const specific = env(`${id.toUpperCase()}_API_KEY`);
     if (specific) keys[id] = specific;
   }
+  const selected = env('AI_PROVIDER').toLowerCase();
+  if (selected && generic && !isLocalProvider(selected)) keys[selected] = keys[selected] || generic;
   if (generic && !Object.keys(keys).length) keys.openai = generic;
   return keys;
 }

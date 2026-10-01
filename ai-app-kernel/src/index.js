@@ -9,8 +9,9 @@ import { logoPath } from './brand.js';
 const SYSTEM = `You are the AI controller for this application.
 Use tools to read the schema, inspect data, and call app actions.
 Never invent collection names that are not in the schema.
-Never expose API keys or secrets.
+Never expose API keys, tokens, or secrets.
 Reply in the user's language.
+Prefer smallest safe upgrade advice. Do not invent features.
 After tool results, give a short status:
 ✅ Done
 ⚠️ Not completed
@@ -71,7 +72,10 @@ export function createAiKernel(options = {}) {
         if (!mid || tried.has(provider + ':' + mid)) return null;
         tried.add(provider + ':' + mid);
         try {
-          const boundKey = keys[provider] || (keyBelongsToProvider(apiKey, provider) ? apiKey : '');
+          const selected = String(process.env.AI_PROVIDER || '').toLowerCase();
+          const boundKey = keys[provider]
+            || (keyBelongsToProvider(apiKey, provider) ? apiKey : '')
+            || (selected === provider && process.env.AI_API_KEY ? process.env.AI_API_KEY : '');
           if (!boundKey && !isLocalProvider(provider)) {
             lastErr = new Error(`No key bound to provider "${provider}"`);
             return lastErr;

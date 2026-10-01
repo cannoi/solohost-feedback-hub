@@ -1,3 +1,10 @@
+# v2.4.0 — 2026-10-02
+
+- Sửa nhập token AI theo cách Builder: key gắn đúng provider đã chọn (`DEEPSEEK_API_KEY`…), không đoán sai từ prefix `sk-`
+- Nút Kiểm tra token gọi `/api/settings/test-ai` (list models), không lỗi khi đang gõ
+- App catalog: slug `app_id`, version, status active/paused/archived
+- Prompt kernel: không bịa tính năng, không lộ token
+
 # v2.3.0 — 2026-10-01
 
 - Xóa toàn bộ app mẫu (catalog trống đến khi thêm / import / ingest)

@@ -1,6 +1,6 @@
 {
   "name": "solohost-feedback-hub",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "type": "module",
   "description": "SoloHost Feedback Hub — support center with AI classification, app ranking and client SDK.",

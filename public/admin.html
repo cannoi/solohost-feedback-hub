@@ -57,8 +57,10 @@ label.muted{display:block;margin-top:8px}
       <div class="kpi" id="kpis"></div>
       <div id="apps">Đang tải…</div>
       <h4>Thêm app</h4>
-      <input id="na_id" placeholder="app_id">
-      <input id="na_name" placeholder="Tên app">
+      <input id="na_id" placeholder="app_id slug, ví dụ snake-classic">
+      <input id="na_name" placeholder="Tên hiển thị">
+      <input id="na_ver" placeholder="Version hiện tại, ví dụ 1.2.0">
+      <select id="na_status"><option value="active">active</option><option value="paused">paused</option><option value="archived">archived</option></select>
       <label class="muted"><input type="checkbox" id="na_fee"> Yêu cầu phí / ủng hộ</label>
       <button onclick="addApp()">+ Thêm vào danh sách</button>
       <button onclick="exportApps()">Xuất file app</button>
@@ -126,7 +128,8 @@ label.muted{display:block;margin-top:8px}
     <label class="muted">Provider</label>
     <select id="s_prov" onchange="onProvider()"></select>
     <label class="muted">API token (dán để tự nhận provider + model)</label>
-    <input id="s_key" type="password" placeholder="dán token — để trống nếu giữ token cũ" oninput="onToken()">
+    <input id="s_key" type="password" placeholder="dán token — để trống nếu giữ token cũ" autocomplete="off">
+    <button type="button" onclick="testAi()">Kiểm tra token</button>
     <p class="muted" id="s_keyhint"></p>
     <label class="muted">Model</label>
     <select id="s_model"></select>
@@ -152,13 +155,13 @@ function fillModels(id, selected){
   }
 }
 function onProvider(){fillModels(s_prov.value,s_model.value)}
-async function onToken(){
-  const token=s_key.value.trim(); if(!token)return;
+async function testAi(){
+  s_keyhint.textContent="Đang kiểm tra token với provider đã chọn…";
   try{
-    const j=await api("/api/settings/peek-token",{method:"POST",body:JSON.stringify({token})});
-    if(j.provider){s_prov.value=j.provider;fillModels(j.provider,s_model.value|| (j.models&&j.models[0]));}
-    s_keyhint.textContent=j.provider?("Nhận diện: "+j.provider+" — model gợi ý: "+(j.models||[]).join(", ")):"Không nhận ra prefix token. Chọn provider thủ công.";
-  }catch(e){s_keyhint.textContent=e.message}
+    const j=await api("/api/settings/test-ai",{method:"POST",body:JSON.stringify({provider:s_prov.value,token:s_key.value.trim(),local_base_url:s_local.value})});
+    if(j.models&&j.models.length) fillModels(s_prov.value, j.models[0]);
+    s_keyhint.textContent=j.ok?("Token hợp lệ. Model: "+(j.models||[]).slice(0,6).join(", ")):(j.warning||"Không liệt kê được model.");
+  }catch(e){s_keyhint.textContent="❌ "+e.message}
 }
 function H(){return {"Content-Type":"application/json"}}
 async function api(url,opt={}){
@@ -264,7 +267,7 @@ async function loadList(){
 }
 async function status(id,s){await api("/api/feedback/"+id,{method:"PATCH",body:JSON.stringify({status:s})});loadList()}
 async function classify(id){await api("/api/ai/classify",{method:"POST",body:JSON.stringify({id})});loadList()}
-async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify({app_id:na_id.value,app_name:na_name.value,fee_required:na_fee.checked})});na_id.value=na_name.value="";boot()}
+async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify({app_id:na_id.value,app_name:na_name.value,current_version:na_ver.value,status:na_status.value,fee_required:na_fee.checked})});na_id.value=na_name.value=na_ver.value="";boot()}
 async function exportApps(){
   const r=await fetch("/api/apps/export",{credentials:"include"});
   if(!r.ok){alert("Không xuất được");return}
