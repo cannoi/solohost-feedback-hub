@@ -1,9 +1,9 @@
-import { completeChat, listProviders, collectAvailableKeys, isLocalProvider } from './providers.js';
+import { completeChat, listProviders, collectAvailableKeys, isLocalProvider, verifyProvider } from './providers.js';
 import { createActionRegistry } from './actions.js';
 import { createJsonFileStore, createMemoryStore, createCustomStore } from './store.js';
 import { kernelTools, runTool } from './tools.js';
 import { mountKernel } from './http.js';
-import { createStickyRouter, modelsFor, detectProviderFromToken, discoverModels, classifyProviderError, friendlyAiError, normalizeModel, PROVIDER_PRIORITY, keyBelongsToProvider } from './router.js';
+import { createStickyRouter, modelsFor, detectProviderFromToken, discoverModels, discoverModelsDetailed, classifyProviderError, friendlyAiError, normalizeModel, PROVIDER_PRIORITY, keyBelongsToProvider } from './router.js';
 import { logoPath } from './brand.js';
 
 const SYSTEM = `You are the AI controller for this application.
@@ -189,6 +189,9 @@ export {
   collectAvailableKeys,
   isLocalProvider,
   detectProviderFromToken,
+  discoverModels,
+  discoverModelsDetailed,
+  verifyProvider,
   keyBelongsToProvider,
   classifyProviderError,
   friendlyAiError,

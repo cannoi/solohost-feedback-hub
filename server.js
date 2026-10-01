@@ -8,7 +8,7 @@ import { TYPES, STATUSES, localClassify, scoreApp } from "./lib/classify.js";
 import { createSettings } from "./lib/settings.js";
 import { catalogPublic, detectProviderFromToken, modelsFor } from "./lib/ai-catalog.js";
 import { createAiKernel, createActionRegistry, createCustomStore } from "./ai-app-kernel/src/index.js";
-import { discoverModels } from "./ai-app-kernel/src/router.js";
+import { verifyProvider } from "./ai-app-kernel/src/providers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8090);
@@ -448,7 +448,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && u.pathname === "/api/health") {
     const s = settings.get();
-    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.4.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
+    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.4.1", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
   }
 
   if (req.method === "GET" && u.pathname === "/api/session") {
@@ -512,15 +512,18 @@ const server = http.createServer(async (req, res) => {
     if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
     const { json } = await readBody(req);
     const st = settings.get();
-    const provider = String(json?.provider || st.ai?.provider || detectProviderFromToken(json?.token) || "").toLowerCase();
-    const token = String(json?.token || st.ai?.api_key || "");
-    if (!provider) return send(res, 400, { ok: false, error: "Choose a provider first." });
-    if (!token && !["ollama", "lmstudio", "local"].includes(provider)) return send(res, 400, { ok: false, error: "Paste an API token." });
-    const models = await discoverModels({ provider, apiKey: token, baseUrl: json?.local_base_url || st.ai?.local_base_url || "" });
-    if (!models.length && !["ollama", "lmstudio", "local"].includes(provider)) {
-      return send(res, 200, { ok: false, provider, models: modelsFor(provider), warning: "Provider did not list models. Token may be invalid, or this provider has no /models endpoint. Suggested models are still usable." });
+    const LOCAL = ["ollama", "lmstudio", "local"];
+    const token = String(json?.token || st.ai?.api_key || "").trim();
+    let provider = String(json?.provider || st.ai?.provider || "").toLowerCase();
+    const hinted = detectProviderFromToken(token);              // strong hints only: gsk_ / sk-or- / xai- / AIza (a bare "sk-" may be OpenAI or DeepSeek)
+    if (!provider) provider = hinted || "";
+    if (!provider) return send(res, 400, { ok: false, error: "Hãy chọn nhà cung cấp trước. / Choose a provider first." });
+    if (!token && !LOCAL.includes(provider)) return send(res, 400, { ok: false, error: "Hãy dán API token. / Paste an API token." });
+    if (token && hinted && hinted !== "openai" && hinted !== provider && !LOCAL.includes(provider)) {
+      return send(res, 200, { ok: false, provider, suggested_provider: hinted, models: modelsFor(hinted), warning: `Token này có dạng của ${hinted}, nhưng bạn đang chọn ${provider}. Đã gợi ý đổi sang ${hinted}. / Token looks like ${hinted}, not ${provider}.` });
     }
-    return send(res, 200, { ok: true, provider, models: models.length ? models : modelsFor(provider), verified: Boolean(models.length) });
+    const out = await verifyProvider({ provider, apiKey: token, baseUrl: json?.local_base_url || st.ai?.local_base_url || "", model: String(json?.model || "") });
+    return send(res, 200, { ...out, models: out.models && out.models.length ? out.models : modelsFor(provider) });
   }
 
   if (req.method === "GET" && u.pathname === "/api/config") {

@@ -116,37 +116,99 @@ export function pickProvider({ requested, keys, localAvailable = false } = {}) {
 }
 
 
-export async function discoverModels({ provider, apiKey = '', baseUrl = '' } = {}) {
+const CHAT_URL = {
+  openai: 'https://api.openai.com/v1/chat/completions',
+  deepseek: 'https://api.deepseek.com/chat/completions',
+  groq: 'https://api.groq.com/openai/v1/chat/completions',
+  openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+  mistral: 'https://api.mistral.ai/v1/chat/completions',
+  xai: 'https://api.x.ai/v1/chat/completions',
+};
+// Not usable for chat: never offer them as "the model".
+const NON_CHAT = /(embed|whisper|tts|dall-e|moderation|transcribe|realtime|audio|image|imagen|veo|rerank|guard|aqa|bison-vision)/i;
+
+function modelsUrl(id, baseUrl) {
+  if (id === 'gemini') return 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000';
+  if (id === 'ollama') return (baseUrl || env('OLLAMA_BASE_URL') || 'http://127.0.0.1:11434/v1/chat/completions').replace(/\/v1\/chat\/completions\/?$/, '').replace(/\/+$/, '') + '/api/tags';
+  if (id === 'lmstudio') return (baseUrl || env('LMSTUDIO_BASE_URL') || 'http://127.0.0.1:1234/v1/chat/completions').replace(/\/chat\/completions\/?$/, '/models');
+  if (id === 'local') return (baseUrl || env('LOCAL_AI_BASE_URL') || env('AI_BASE_URL') || 'http://127.0.0.1:11434/v1/chat/completions').replace(/\/chat\/completions\/?$/, '/models');
+  return CHAT_URL[id] ? CHAT_URL[id].replace(/\/chat\/completions\/?$/, '/models') : '';
+}
+
+/** Pull model ids out of whatever shape the provider answered with. */
+export function parseModelList(id, data) {
+  let ids = [];
+  if (id === 'gemini') {
+    const list = Array.isArray(data?.models) ? data.models : [];
+    ids = list
+      .filter((m) => !Array.isArray(m.supportedGenerationMethods) || m.supportedGenerationMethods.includes('generateContent'))
+      .map((m) => String(m.name || m.baseModelId || '').replace(/^models\//, ''));
+  } else if (id === 'ollama') {
+    ids = (Array.isArray(data?.models) ? data.models : []).map((m) => m.name || m.model);
+  } else {
+    // OpenAI, DeepSeek, Groq, Mistral, xAI, OpenRouter, LM Studio: { data: [...] }. Some gateways use { models: [...] } or a bare array.
+    const list = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : Array.isArray(data) ? data : [];
+    ids = list.map((m) => (typeof m === 'string' ? m : m.id || m.name || m.model));
+  }
+  ids = ids.map((m) => String(m || '').trim()).filter(Boolean).filter((m, i, a) => a.indexOf(m) === i);
+  const chat = ids.filter((m) => !NON_CHAT.test(m));
+  const use = chat.length ? chat : ids;
+  const pref = DEFAULT_MODELS[id] || [];
+  use.sort((x, y) => {
+    const px = pref.indexOf(x), py = pref.indexOf(y);
+    if (px >= 0 || py >= 0) return (px < 0 ? 999 : px) - (py < 0 ? 999 : py);
+    return 0;
+  });
+  return use.slice(0, 60);
+}
+
+/** Classify an HTTP status / network error so the UI can say WHY listing failed instead of one generic sentence. */
+export function discoveryErrorKind(status, err) {
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 402) return 'billing';
+  if (status === 404 || status === 405) return 'no_models_endpoint';
+  if (status === 429) return 'rate';
+  if (status >= 500) return 'server';
+  if (err) return /abort|timeout/i.test(String(err.name || '') + String(err.message || '')) ? 'timeout' : 'network';
+  return 'other';
+}
+
+/**
+ * Detailed model discovery. Never throws. Returns { ok, models, status, kind, detail, url }.
+ * (The old discoverModels() swallowed every failure into [] and read the wrong JSON field for OpenAI-style APIs.)
+ */
+export async function discoverModelsDetailed({ provider, apiKey = '', baseUrl = '', timeoutMs = 15000, fetchImpl } = {}) {
   const id = String(provider || '').toLowerCase();
-  if (!id || id === 'custom') return [];
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey && !isLocalProvider(id)) headers.Authorization = `Bearer ${apiKey}`;
-  let url = '';
-  if (id === 'gemini') url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(apiKey);
-  else if (id === 'ollama') url = (env('OLLAMA_BASE_URL') || 'http://127.0.0.1:11434/v1/chat/completions').replace(/\/v1\/chat\/completions\/?$/, '') + '/api/tags';
-  else if (id === 'lmstudio') url = (baseUrl || env('LMSTUDIO_BASE_URL') || 'http://127.0.0.1:1234/v1/chat/completions').replace(/\/chat\/completions\/?$/, '/models');
-  else if (id === 'local') url = (baseUrl || env('LOCAL_AI_BASE_URL') || env('AI_BASE_URL') || 'http://127.0.0.1:11434/v1/chat/completions').replace(/\/chat\/completions\/?$/, '/models');
-  else {
-    const chat = {
-      openai: 'https://api.openai.com/v1/chat/completions',
-      deepseek: 'https://api.deepseek.com/chat/completions',
-      groq: 'https://api.groq.com/openai/v1/chat/completions',
-      openrouter: 'https://openrouter.ai/api/v1/chat/completions',
-      mistral: 'https://api.mistral.ai/v1/chat/completions',
-      xai: 'https://api.x.ai/v1/chat/completions',
-    }[id];
-    if (!chat) return [];
-    url = chat.replace(/\/chat\/completions\/?$/, '/models');
+  const doFetch = fetchImpl || globalThis.fetch;
+  if (!id || id === 'custom') return { ok: false, models: [], status: 0, kind: 'no_models_endpoint', detail: 'No model list for this provider.' };
+  const url = modelsUrl(id, baseUrl);
+  if (!url) return { ok: false, models: [], status: 0, kind: 'no_models_endpoint', detail: 'Unknown provider.' };
+  const headers = { Accept: 'application/json' };
+  const local = isLocalProvider(id);
+  if (apiKey && !local) {
+    if (id === 'gemini') headers['x-goog-api-key'] = apiKey;   // header, not ?key= : keeps the secret out of URLs and logs
+    else headers.Authorization = `Bearer ${apiKey}`;
   }
   try {
-    const res = await fetch(url, { method: 'GET', headers });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const raw = id === 'ollama' ? (data.models || []).map(x => x.name) : (data.models || []).map(x => x.id || x.name);
-    return raw.filter(Boolean).filter((m, i, a) => a.indexOf(m) === i).slice(0, 40);
-  } catch {
-    return [];
+    const res = await doFetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(timeoutMs) });
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = '';
+      try { const j = JSON.parse(text); msg = String(j?.error?.message || j?.error || j?.message || ''); } catch { msg = text.slice(0, 160); }
+      return { ok: false, models: [], status: res.status, kind: discoveryErrorKind(res.status), detail: msg.slice(0, 200), url };
+    }
+    let data; try { data = JSON.parse(text); } catch { return { ok: false, models: [], status: res.status, kind: 'parse', detail: 'Provider answered with non-JSON.', url }; }
+    const models = parseModelList(id, data);
+    if (!models.length) return { ok: false, models: [], status: res.status, kind: 'empty', detail: 'Provider returned an empty model list.', url };
+    return { ok: true, models, status: res.status, kind: 'ok', detail: '', url };
+  } catch (err) {
+    return { ok: false, models: [], status: 0, kind: discoveryErrorKind(0, err), detail: String(err?.cause?.code || err?.message || err).slice(0, 160), url };
   }
+}
+
+/** Backward compatible: array of model ids ([] when anything fails). */
+export async function discoverModels(opts = {}) {
+  return (await discoverModelsDetailed(opts)).models;
 }
 
 export function createStickyRouter(options = {}) {

@@ -1,3 +1,15 @@
+# v2.4.1 — 2026-10-02
+
+- **Sửa lỗi "Provider did not list models. Token may be invalid…"** khi nhập token AI trong Settings.
+  - Nguyên nhân gốc: `discoverModels()` đọc `data.models`, nhưng OpenAI / DeepSeek / Groq / Mistral / xAI / OpenRouter trả `{ data: [...] }` → luôn rỗng. Mọi lỗi mạng / 401 cũng bị nuốt thành `[]`, nên thông báo luôn đổ cho "token sai".
+  - Gemini: tên model có tiền tố `models/`, key nay gửi bằng header `x-goog-api-key` (không nằm trong URL/log), chỉ lấy model có `generateContent`.
+  - Thêm timeout 15s; không còn treo khi mạng chặn.
+- Nút **Kiểm tra token** làm giống Builder: (1) liệt kê model → (2) nếu nhà cung cấp không có `/models` thì gửi 1 câu chat thử → báo đúng lý do (401/403 sai key, 402 hết credit, 429, timeout, DNS/mạng).
+- Dán token có prefix rõ (`gsk_`, `sk-or-`, `xai-`, `AIza`) → tự chọn provider; chọn nhầm provider → gợi ý đổi (không gửi key sang nhà sai).
+- ai-app-kernel 1.1.3: thêm `discoverModelsDetailed()`, `verifyProvider()`; `discoverModels()` vẫn trả mảng như cũ (tương thích).
+- Thêm `tests/ai-discovery.test.js` (23 kiểm tra offline) + `npm test`.
+- Không đổi: SDK client, feedback API, catalog app, donate, đăng nhập, định dạng settings.json.
+
 # v2.4.0 — 2026-10-02
 
 - Sửa nhập token AI theo cách Builder: key gắn đúng provider đã chọn (`DEEPSEEK_API_KEY`…), không đoán sai từ prefix `sk-`
