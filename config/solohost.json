@@ -1,0 +1,8 @@
+{
+  "app": "solohost-feedback-hub",
+  "version": "2.3.0",
+  "port": 8090,
+  "hub_id": "SHFH-CANNOI-001",
+  "public_base_url": "",
+  "notes": "Non-secret SoloHost metadata. Secrets live in config/solohost.env or Settings UI. First boot only requires setting the admin password in the app."
+}

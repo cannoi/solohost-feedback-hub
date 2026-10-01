@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createFileDb } from "./lib/store.js";
 import { TYPES, STATUSES, localClassify, scoreApp } from "./lib/classify.js";
 import { createSettings } from "./lib/settings.js";
-import { seedApps } from "./lib/catalog.js";
+import { catalogPublic, detectProviderFromToken, modelsFor } from "./lib/ai-catalog.js";
 import { createAiKernel, createActionRegistry, createCustomStore } from "./ai-app-kernel/src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,9 +24,17 @@ const RATE_WINDOW = 60 * 60 * 1000;
 const RATE_LIMIT = 20;
 
 const dataDir = path.join(__dirname, "data");
+function applyAiEnv(s) {
+  const st = s || (typeof settings !== "undefined" ? settings.get() : null);
+  if (!st) return;
+  if (st.ai?.provider) process.env.AI_PROVIDER = st.ai.provider;
+  if (st.ai?.model) process.env.AI_MODEL = st.ai.model;
+  if (st.ai?.local_base_url) process.env.LOCAL_AI_BASE_URL = st.ai.local_base_url;
+  if (st.ai?.api_key) process.env.AI_API_KEY = st.ai.api_key;
+}
 const db = createFileDb(dataDir);
 const settings = createSettings(dataDir, process.env);
-seedApps(db);
+applyAiEnv();
 const hits = new Map();
 const sessions = new Map();
 const SESSION_TTL = 12 * 60 * 60 * 1000;
@@ -108,7 +116,6 @@ function equal(a, b) {
 function admin(req) {
   if (sessionOk(req)) return true;
   const tok = bearer(req);
-  if (ADMIN_TOKEN && equal(tok, ADMIN_TOKEN)) return true;
   if (tok && settings.checkPassword(tok)) return true;
   return false;
 }
@@ -426,7 +433,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && u.pathname === "/api/health") {
     const s = settings.get();
-    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.2.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
+    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.3.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
   }
 
   if (req.method === "GET" && u.pathname === "/api/session") {
@@ -447,9 +454,7 @@ const server = http.createServer(async (req, res) => {
     if (limited(req, 8, 15 * 60 * 1000, "login")) return send(res, 429, { ok: false, error: "Too many login attempts" });
     const { json } = await readBody(req);
     const pw = String(json?.password || "");
-    const ok = settings.hasPassword()
-      ? settings.checkPassword(pw)
-      : (ADMIN_TOKEN && pw === ADMIN_TOKEN);
+    const ok = settings.checkPassword(pw);
     if (!ok) return send(res, 401, { ok: false, error: "Sai mật khẩu" });
     setSession(res);
     return send(res, 200, { ok: true });
@@ -470,7 +475,22 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "PUT" && u.pathname === "/api/settings") {
     if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
     const { json } = await readBody(req);
-    return send(res, 200, { ok: true, settings: settings.update(json || {}) });
+    const view = settings.update(json || {});
+    applyAiEnv(settings.get());
+    return send(res, 200, { ok: true, settings: view });
+  }
+
+  if (req.method === "GET" && u.pathname === "/api/settings/ai-catalog") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    return send(res, 200, { ok: true, providers: catalogPublic() });
+  }
+
+  if (req.method === "POST" && u.pathname === "/api/settings/peek-token") {
+    if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
+    const { json } = await readBody(req);
+    const token = String(json?.token || "");
+    const provider = detectProviderFromToken(token);
+    return send(res, 200, { ok: true, provider, models: modelsFor(provider || json?.provider) });
   }
 
   if (req.method === "GET" && u.pathname === "/api/config") {

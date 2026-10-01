@@ -1,3 +1,11 @@
+# v2.3.0 — 2026-10-01
+
+- Xóa toàn bộ app mẫu (catalog trống đến khi thêm / import / ingest)
+- 2 file config SoloHost: `config/solohost.json` + `config/solohost.env`
+- Khởi tạo chỉ yêu cầu đặt mật khẩu trong app (không bootstrap ADMIN_TOKEN)
+- Settings: chọn provider, dán token → tự nhận provider + gợi ý model; key chỉ trả masked
+- Module tích hợp + hướng dẫn chuẩn: `module/`
+
 # v2.2.0 — 2026-10-01
 
 - Xuất / nhập danh sách app (`/api/apps/export`, `/api/apps/import`)

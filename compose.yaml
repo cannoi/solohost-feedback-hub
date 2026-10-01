@@ -5,20 +5,10 @@ services:
     restart: unless-stopped
     ports:
       - "8090:8090"
+    env_file:
+      - ./config/solohost.env
     environment:
       PORT: "8090"
-      HUB_ID: "SHFH-CANNOI-001"
-      PUBLIC_BASE_URL: "http://YOUR_PUBLIC_IP:8090"
-      ADMIN_TOKEN: "CHANGE_THIS_ADMIN_TOKEN"
-      ADMIN_PASSWORD: ""
-      INGEST_TOKEN: "CHANGE_THIS_APP_TOKEN"
-      AI_PROVIDER: ""
-      AI_MODEL: ""
-      AI_API_KEY: ""
-      LOCAL_AI_BASE_URL: ""
-      PI_WALLET: "GAQAZ5XLWREKQYMMN247A44PNPLAKRORZOPZNVG3CDPCSSFMEVFIYJJL"
-      MB_BANK: "MB Bank"
-      MB_ACCOUNT: "0905428801"
-      MB_NAME: "CANNOI"
     volumes:
       - ./data:/app/data
+      - ./config:/app/config:ro

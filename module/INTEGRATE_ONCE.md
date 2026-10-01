@@ -1,94 +1,51 @@
-# Tích hợp một lần — module SHFH v2.2
+# Tích hợp chuẩn — SoloHost Feedback Hub
 
-Copy `module/shfh-client.js` vào app **hoặc** load từ Hub để luôn nhận bản mới:
+File kèm: `shfh-client.js`  
+Khuyến nghị load từ Hub để sau này chỉ nâng cấp Hub:
 
 ```html
 <script src="http://SOLOHOST-IP:8090/api/sdk.js"></script>
 ```
 
-Load từ Hub = nâng cấp sau này **chỉ sửa Feedback Hub**. App không cần rebuild khi đổi câu thông báo, cờ phí, hay rule update.
+Hoặc copy `shfh-client.js` vào app (offline).
 
-## 1. Khởi tạo (mọi app)
+## Bước 1 — trên Hub
+
+1. Mở `http://SOLOHOST-IP:8090`
+2. Đặt mật khẩu admin (lần đầu)
+3. Settings: Public URL, Ingest token (nếu muốn khóa API), Donate, AI
+4. Thêm app (`app_id` cố định) hoặc đợi client gửi feedback lần đầu
+
+## Bước 2 — trong app (một lần)
 
 ```js
 const hub = SHFH.create({
   hubUrl: "http://SOLOHOST-IP:8090",
-  ingestToken: "YOUR_INGEST_TOKEN", // lấy từ Settings Hub
-  appId: "snake-classic",           // đúng catalog trên Hub
-  appName: "Snake Classic",
-  version: "1.2.0",                 // version app đang chạy
+  ingestToken: "",          // trùng Settings → Ingest token (có thể để trống)
+  appId: "my-app-id",
+  appName: "My App",
+  version: "1.0.0",
   platform: "solohost",
   locale: "vi"
 });
-```
 
-`installed_at` được ghi local lần đầu mở app. Không gửi seed/password.
-
-## 2. Một hàm cho mọi kịch bản: `hub.sync()`
-
-Gọi khi app mở và mỗi 6–12 giờ.
-
-```js
 const snap = await hub.sync();
-for (const a of snap.actions) {
-  if (a.kind === "update") showUpdate(a.update);
-  if (a.kind === "unpaid_nudge") showDonate(snap.donate);
-  if (a.kind === "payment_ok") showThanks();
-  if (a.kind === "thanks") showToast(a.title);
-  if (a.id) hub.markRead(a.id);
-}
-if (snap.update.needed && snap.update.item) {
-  // so sánh: version Hub > version app  HOẶC  ngày publish > ngày cài
-  // snap.update.newerVer / publishedAfterInstall / installedAt
-}
+// snap.payment.state: free | unpaid | pending | supporter | expired | waived | unknown
+// snap.update.needed  — version Hub > version app HOẶC ngày publish > ngày cài
+// snap.actions        — update | unpaid_nudge | payment_ok | thanks
+// snap.donate         — Pi / MB Bank từ Hub
+
+await hub.sendFeedback({ type: "bug", message: "mô tả", rating: 2 });
+await hub.reportPayment({ txn_id: "TX", method: "pi", amount: "1" });
+if (snap.update.item) hub.markUpdateSeen(snap.update.item.id);
 ```
 
-## 3. Trạng thái thanh toán (client tự giữ + Hub xác nhận)
+Gọi `hub.sync()` lúc mở app. Mất mạng: feedback xếp hàng local.
 
-| state | Nghĩa | Thông báo |
-|---|---|---|
-| free | App không thu phí (`fee_required=false` trên Hub) | không nhắc ủng hộ bắt buộc |
-| unpaid | Cần phí, chưa trả | `unpaid_nudge` |
-| pending | User vừa bấm ủng hộ, chờ Hub | không spam nudge |
-| paid / supporter | Đã ghi nhận | `payment_ok` một lần |
-| expired | `paid_until` hết hạn | `unpaid_nudge` |
-| waived | Admin miễn | không nhắc |
-| unknown | chưa có policy | chờ `sync()` |
+## Không gửi
 
-```js
-hub.reportPayment({ txn_id, method: "pi", amount: "1" }); // → pending rồi supporter nếu Hub 201
-hub.setPaymentState("waived");
-```
+mật khẩu, API key, seed phrase, private key.
 
-Cờ `fee_required` **đặt trên Hub**, không hard-code trong app.
+## Nâng cấp sau
 
-## 4. Cập nhật: ngày cài vs ngày publish
-
-Thông báo update khi **một** điều đúng:
-
-1. `latest.version` > version app đang chạy  
-2. `latest.created_at` > `installed_at` (bản publish sau ngày user cài)
-
-Không báo nếu user đã `markUpdateSeen(id)` hoặc đã ở đúng version.
-
-## 5. Gửi feedback
-
-```js
-await hub.sendFeedback({ type: "bug", message: "P2 drop", rating: 2 });
-```
-
-Mất mạng → xếp hàng local, `sync()`/`flushQueue()` gửi sau.
-
-## 6. UI gợi ý trong app
-
-- 💬 Feedback  
-- 🆕 Updates (`snap.update`)  
-- 💛 Donate (`snap.donate`)  
-
-Tách khỏi chức năng chính của app.
-
-## 7. Không làm
-
-- Không nhúng ADMIN_TOKEN  
-- Không gửi ví / seed / password  
-- Không tự tin thanh toán Pi đã verified — Hub ghi nhận `txn_id`, verifier Pi vẫn là app của bạn
+Đổi phí / câu thông báo / update / donate trên Hub. App không cần sửa nếu đang load `/api/sdk.js`.

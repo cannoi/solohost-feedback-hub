@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package.json server.js ./
 COPY lib ./lib
 COPY public ./public
+COPY config ./config
+COPY module ./module
 COPY ai-app-kernel ./ai-app-kernel
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node

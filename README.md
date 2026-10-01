@@ -1,26 +1,25 @@
-# SoloHost Feedback Hub v2.0
+# SoloHost Feedback Hub v2.3
 
-Trung tâm phản hồi + AI trên SoloHost. Nhận feedback từ mọi app, xếp hạng app nóng/lạnh, phân loại bằng AI kernel, xếp hàng nâng cấp, và đẩy thông báo (cảm ơn / thanh toán OK / nhắc ủng hộ) về client.
+Trung tâm phản hồi + AI trên SoloHost.
 
-## Chạy
+## Config SoloHost (2 file)
+
+- `config/solohost.json` — metadata không secret
+- `config/solohost.env` — env tùy chọn (PORT, HUB_ID, …)
+
+Lần đầu chỉ cần mở app và **đặt mật khẩu**. Token AI / donate / ingest điền trong Settings.
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-- Admin (mặc định): `http://SOLOHOST-IP:8090` — đăng nhập mật khẩu
+- Admin: `http://SOLOHOST-IP:8090`
 - Form công khai: `http://SOLOHOST-IP:8090/feedback`
-- Admin alias: `http://SOLOHOST-IP:8090/admin`
-- SDK (bản mới từ Hub): `http://SOLOHOST-IP:8090/api/sdk.js`
-- Module + hướng dẫn một lần: thư mục `module/`
-
-Đặt `ADMIN_TOKEN` và `INGEST_TOKEN` dài, ngẫu nhiên. AI dùng `ai-app-kernel` (auto provider từ token / local OpenAI-compatible).
+- SDK: `http://SOLOHOST-IP:8090/api/sdk.js`
+- Module + hướng dẫn: `module/`
 
 ## Dữ liệu
 
-`data/apps.json` `feedback.json` `updates.json` `notices.json` `payments.json`
+`data/` — apps, feedback, updates, notices, payments, settings (hash mật khẩu + key AI).
 
-## Bảo mật
-
-Không privileged, không Docker socket, không lộ `/app/data`. Public HTTP nên đứng sau HTTPS khi mở Internet.
