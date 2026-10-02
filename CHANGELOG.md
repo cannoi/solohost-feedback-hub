@@ -1,3 +1,13 @@
+# v2.5.0 — 2026-10-02
+
+- **AI classify chỉ còn một việc: tổng hợp.** Nút **📊 AI tổng hợp** gom TẤT CẢ bình luận, đánh giá, phản hồi của một app (hoặc mọi app) thành chủ đề và xếp **từ nhiều yêu cầu nhất → ít nhất**, tách hai nhóm: 🔧 *Cần sửa* và 🚀 *Đề xuất nâng cấp*. Mỗi chủ đề có số phản hồi, số người, ★ trung bình, số lượt trong 7 ngày, mức ưu tiên P0–P3, hành động gợi ý, vài trích dẫn gốc và prompt gửi Builder.
+  - Gom chủ đề không cần AI (khớp từ khóa không dấu + độ giống nhau); AI nếu có chỉ viết lại tiêu đề / tóm tắt / hành động, **không thể đổi thứ tự hay số đếm**. AI lỗi hoặc chưa có token → vẫn ra báo cáo đầy đủ bằng bản cục bộ.
+  - Bỏ nút "AI classify" từng bình luận (mỗi phản hồi vẫn được gắn nhãn local miễn phí khi gửi vào). `POST /api/ai/classify` nay trả báo cáo tổng hợp; alias `/api/ai/insights`.
+  - `GET /api/apps/:id/plan` dùng cùng thứ tự (thêm `count`, `users`, `priority`; giữ các trường cũ).
+- **Thông tin ủng hộ có sẵn:** ví Pi + MB Bank (0905428801, Tran Huu Nghi) là mặc định trong `lib/settings.js`; tự áp dụng cho `/api/config`, `/api/client-policy`, `snap.donate` của SDK và trang `/feedback`. Biến môi trường `PI_WALLET`/`MB_*` hoặc Settings vẫn ghi đè; để trống một ô = quay về mặc định (cả với `settings.json` cũ đang lưu chuỗi rỗng).
+- Thêm `tests/insights.test.js` (28 kiểm tra); `npm test` chạy cả bộ.
+- Không đổi: SDK client, API ingest, đăng nhập, token AI / kiểm tra token (2.4.1), định dạng dữ liệu.
+
 # v2.4.1 — 2026-10-02
 
 - **Sửa lỗi "Provider did not list models. Token may be invalid…"** khi nhập token AI trong Settings.

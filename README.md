@@ -7,7 +7,9 @@ Trung tâm phản hồi + AI trên SoloHost.
 - `config/solohost.json` — metadata không secret
 - `config/solohost.env` — env tùy chọn (PORT, HUB_ID, …)
 
-Lần đầu chỉ cần mở app và **đặt mật khẩu**. Token AI / donate / ingest điền trong Settings.
+Lần đầu chỉ cần mở app và **đặt mật khẩu**. Token AI / donate / ingest điền trong Settings. Thông tin ủng hộ (ví Pi + MB Bank) đã có sẵn mặc định, sửa được trong Settings.
+
+**📊 AI tổng hợp**: gom mọi phản hồi theo chủ đề, xếp từ nhiều yêu cầu nhất; tách "Cần sửa" và "Đề xuất nâng cấp" (xem `INTEGRATION.md`).
 
 ```bash
 docker compose build

@@ -66,7 +66,7 @@ Admin `/admin` chat với kernel. Actions:
 - `publish_update` (vẫn nên review tay)
 - `send_notice`
 
-Phân loại local luôn chạy ngay khi ingest. Nút **AI classify** gọi kernel để tinh chỉnh.
+Mỗi phản hồi được gắn nhãn local (miễn phí) ngay khi ingest. Nút **📊 AI tổng hợp** (`POST /api/ai/classify`, alias `/api/ai/insights`, body `{app_id?, use_ai?, include_closed?}`) gom TẤT CẢ bình luận / đánh giá / phản hồi thành các chủ đề và xếp từ nhiều yêu cầu nhất → ít nhất, tách 2 nhóm: **fixes** (cần sửa) và **upgrades** (đề xuất nâng cấp). Thứ tự và số đếm luôn do code tính; AI (nếu đã có token) chỉ viết lại tiêu đề / tóm tắt / hành động và không thể đổi thứ tự. Không có AI vẫn chạy bình thường.
 
 ## Builder prompt
 

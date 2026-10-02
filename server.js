@@ -5,7 +5,8 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createFileDb } from "./lib/store.js";
 import { TYPES, STATUSES, localClassify, scoreApp } from "./lib/classify.js";
-import { createSettings } from "./lib/settings.js";
+import { createSettings, DEFAULT_DONATE } from "./lib/settings.js";
+import { buildInsights, applyAiWording } from "./lib/insights.js";
 import { catalogPublic, detectProviderFromToken, modelsFor } from "./lib/ai-catalog.js";
 import { createAiKernel, createActionRegistry, createCustomStore } from "./ai-app-kernel/src/index.js";
 import { verifyProvider } from "./ai-app-kernel/src/providers.js";
@@ -16,10 +17,10 @@ const HUB_ID = process.env.HUB_ID || "SHFH-CHANGE-ME";
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const INGEST_TOKEN = process.env.INGEST_TOKEN || "";
-const PI_WALLET = process.env.PI_WALLET || "";
-const MB_BANK = process.env.MB_BANK || "MB Bank";
-const MB_ACCOUNT = process.env.MB_ACCOUNT || "";
-const MB_NAME = process.env.MB_NAME || "";
+const PI_WALLET = process.env.PI_WALLET || DEFAULT_DONATE.pi_wallet;
+const MB_BANK = process.env.MB_BANK || DEFAULT_DONATE.mb_bank;
+const MB_ACCOUNT = process.env.MB_ACCOUNT || DEFAULT_DONATE.mb_account;
+const MB_NAME = process.env.MB_NAME || DEFAULT_DONATE.mb_name;
 const MAX_BODY = 160 * 1024;
 const RATE_WINDOW = 60 * 60 * 1000;
 const RATE_LIMIT = 20;
@@ -355,7 +356,7 @@ const kernel = createAiKernel({
   actions,
   baseUrl: process.env.LOCAL_AI_BASE_URL || process.env.AI_BASE_URL || "",
   system: `You are the SoloHost Feedback Hub controller.
-Classify feedback, rank apps, and draft the smallest safe upgrade.
+Summarize all feedback, ratings and comments into themes ranked from most requested to least, rank apps, and draft the smallest safe upgrade.
 Never invent collection names, features, or payment confirmations.
 Never expose API keys or tokens.
 Reply in the user's language.
@@ -370,16 +371,18 @@ function rankedApps() {
 }
 
 function upgradePlan(app_id) {
-  const items = db.read("feedback").filter((x) => x.app_id === app_id && !["DONE", "DECLINED"].includes(x.status));
-  const bugs = items.filter((x) => x.type === "bug");
-  const ideas = items.filter((x) => x.type === "idea" || x.type === "improvement");
+  // Ranked by how many people asked (see lib/insights.js). Keeps the old fields so existing clients keep working.
+  const rep = buildInsights(db.read("feedback"), { app_id });
+  const open = db.read("feedback").filter((x) => x.app_id === app_id && !["DONE", "DECLINED"].includes(x.status));
+  const bugs = open.filter((x) => x.type === "bug");
+  const ideas = open.filter((x) => x.type === "idea" || x.type === "improvement");
   return {
     app_id,
-    generated_at: new Date().toISOString(),
+    generated_at: rep.generated_at,
     headline: `${bugs.length} open bugs, ${ideas.length} ideas — ship smallest safe change first`,
-    must_fix: bugs.slice(0, 5).map((x) => ({ id: x.id, text: x.message, priority: x.ai?.priority })),
-    next_features: ideas.slice(0, 5).map((x) => ({ id: x.id, text: x.message })),
-    builder_prompt: `App: ${app_id}\nProblem: ${bugs.length} users report open bugs.\nRequested action: Analyze current source, identify root cause, propose smallest safe change, then build, smoke test, HTTP test and preview.`,
+    must_fix: rep.fixes.slice(0, 5).map((x) => ({ id: x.id, text: x.title, count: x.count, users: x.users, priority: x.priority, feedback_ids: x.feedback_ids })),
+    next_features: rep.upgrades.slice(0, 5).map((x) => ({ id: x.id, text: x.title, count: x.count, users: x.users, priority: x.priority, feedback_ids: x.feedback_ids })),
+    builder_prompt: rep.builder_prompt,
   };
 }
 
@@ -448,7 +451,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && u.pathname === "/api/health") {
     const s = settings.get();
-    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.4.1", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
+    return send(res, 200, { ok: true, service: "solohost-feedback-hub", version: "2.5.0", hub_id: s.hub_id || HUB_ID, public_base_url: s.public_base_url || PUBLIC_BASE_URL || null, needs_setup: !settings.hasPassword() });
   }
 
   if (req.method === "GET" && u.pathname === "/api/session") {
@@ -690,27 +693,29 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true, plan: upgradePlan(appId) });
   }
 
-  if (req.method === "POST" && u.pathname === "/api/ai/classify") {
+  // AI classify = ONE summary of all comments / ratings / feedback, ranked from most requested to least.
+  // (Per-item AI classification was removed on purpose; each item still gets a free local tag when it arrives.)
+  if (req.method === "POST" && (u.pathname === "/api/ai/classify" || u.pathname === "/api/ai/insights")) {
     if (!admin(req)) return send(res, 401, { ok: false, error: "Unauthorized" });
     const { json } = await readBody(req);
-    const id = json?.id;
-    const rows = db.read("feedback");
-    const i = rows.findIndex((x) => x.id === id);
-    if (i < 0) return send(res, 404, { ok: false, error: "Not found" });
-    try {
-      const prompt = `Classify this app feedback. Reply JSON only: {"type":"bug|idea|improvement|review","sentiment":"positive|neutral|negative","priority":"P0|P1|P2|P3","summary":"...","suggested_action":"..."}\nAPP=${rows[i].app_id} TYPE=${rows[i].type} RATING=${rows[i].rating}\nMSG=${rows[i].message}`;
-      const out = await kernel.chat({ message: prompt });
-      let parsed = null;
-      const m = String(out.text || out.message || "").match(/\{[\s\S]*\}/);
-      if (m) parsed = JSON.parse(m[0]);
-      rows[i].ai = { ...(parsed || localClassify(rows[i])), classifier: parsed ? "kernel" : "local", raw: out.text };
-      db.write("feedback", rows);
-      return send(res, 200, { ok: true, item: rows[i] });
-    } catch (e) {
-      rows[i].ai = { ...localClassify(rows[i]), error: String(e.message || e) };
-      db.write("feedback", rows);
-      return send(res, 200, { ok: true, item: rows[i], fallback: true });
+    const appId = json?.app_id ? clean(json.app_id, 120) : "";
+    let report = buildInsights(db.read("feedback"), { app_id: appId, includeClosed: json?.include_closed === true });
+    let ai_note = "";
+    if (json?.use_ai !== false && report.ranked.length) {
+      try {
+        const brief = report.ranked.slice(0, 25).map((x) => ({ id: x.id, kind: x.kind, count: x.count, users: x.users, title: x.title, samples: x.samples }));
+        const out = await kernel.chat({
+          message: `Do NOT call tools. Re-word only. Below are feedback themes already ranked by number of requests. Do not reorder, merge, drop or invent any. For each id write a clear short title (max 90 chars), a one-sentence summary and one concrete next action, in the language of the samples. Reply JSON only: {"items":[{"id":"IN001","title":"...","summary":"...","suggested_action":"..."}]}\n${JSON.stringify(brief)}`,
+        });
+        const m = String(out.text || out.message || "").match(/\{[\s\S]*\}/);
+        const parsed = m ? JSON.parse(m[0]) : null;
+        if (parsed && Array.isArray(parsed.items)) report = applyAiWording(report, parsed.items);
+        else ai_note = "AI không trả về JSON hợp lệ — đang dùng bản tổng hợp cục bộ.";
+      } catch (e) {
+        ai_note = "AI chưa sẵn sàng (" + String(e.message || e).slice(0, 120) + ") — đang dùng bản tổng hợp cục bộ, thứ tự vẫn đúng.";
+      }
     }
+    return send(res, 200, { ok: true, report, ai_note });
   }
 
   if (req.method === "POST" && u.pathname === "/api/ai/rewrite") {

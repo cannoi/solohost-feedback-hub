@@ -1,10 +1,10 @@
 {
   "name": "solohost-feedback-hub",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "private": true,
   "type": "module",
   "description": "SoloHost Feedback Hub — support center with AI classification, app ranking and client SDK.",
   "main": "server.js",
-  "scripts": { "start": "node server.js", "test": "node --check server.js && node --check ai-app-kernel/src/router.js && node --check ai-app-kernel/src/providers.js && node tests/ai-discovery.test.js && node ai-app-kernel/src/selftest.js" },
+  "scripts": { "start": "node server.js", "test": "node --check server.js && node --check ai-app-kernel/src/router.js && node --check ai-app-kernel/src/providers.js && node tests/ai-discovery.test.js && node --check lib/insights.js && node tests/insights.test.js && node ai-app-kernel/src/selftest.js" },
   "engines": { "node": ">=20" }
 }

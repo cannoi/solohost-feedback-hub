@@ -71,9 +71,10 @@ label.muted{display:block;margin-top:8px}
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h3 id="ftitle">Feedback</h3>
-        <button onclick="loadPlan()">Kế hoạch nâng cấp</button>
+        <span><button onclick="loadInsights()">📊 AI tổng hợp</button> <button onclick="loadPlan()">Kế hoạch nâng cấp</button></span>
       </div>
       <div id="plan" class="muted"></div>
+      <div id="insights"></div>
       <div id="list">Đang tải…</div>
     </div>
   </section>
@@ -281,11 +282,25 @@ async function loadList(){
     <select onchange="status('${encodeURIComponent(x.id)}',this.value)">
       ${["NEW","REVIEWING","PLANNED","IN_PROGRESS","DONE","DECLINED"].map(s=>`<option ${s===x.status?"selected":""}>${s}</option>`).join("")}
     </select>
-    <button onclick="classify('${x.id}')">AI classify</button>
   </div>`).join("")||"<p class=muted>Không có feedback.</p>";
 }
 async function status(id,s){await api("/api/feedback/"+id,{method:"PATCH",body:JSON.stringify({status:s})});loadList()}
-async function classify(id){await api("/api/ai/classify",{method:"POST",body:JSON.stringify({id})});loadList()}
+async function loadInsights(){
+  insights.innerHTML="<p class=muted>Đang tổng hợp toàn bộ phản hồi…</p>";
+  try{
+    const j=await api("/api/ai/classify",{method:"POST",body:JSON.stringify({app_id:currentApp||undefined})});
+    const r=j.report, t=r.totals;
+    const row=x=>`<div class=item><span class="tag ${esc(x.priority)}">${esc(x.priority)}</span><b>#${x.rank} ${esc(x.title)}</b>
+      <div class=muted>${x.count} phản hồi · ${x.users} người${x.avg_rating?" · ★ "+x.avg_rating:""}${x.recent?" · "+x.recent+" trong 7 ngày":""}${x.apps.length>1?" · "+x.apps.length+" app":""}</div>
+      ${x.summary?`<div>${esc(x.summary)}</div>`:""}<div class=muted>→ ${esc(x.suggested_action)}</div>
+      ${(x.samples||[]).map(m=>`<div class=muted>“${esc(m)}”</div>`).join("")}</div>`;
+    insights.innerHTML=`<h4>📊 Tổng hợp ${currentApp?esc(currentApp):"tất cả app"} — ${t.analyzed} phản hồi${t.praise?`, ${t.praise} khen`:""}${t.avg_rating?`, ★ ${t.avg_rating}`:""}</h4>
+      ${j.ai_note?`<p class=muted>${esc(j.ai_note)}</p>`:""}
+      <h4>🔧 Cần sửa (nhiều người báo nhất trước)</h4>${r.fixes.map(row).join("")||"<p class=muted>Không có.</p>"}
+      <h4>🚀 Đề xuất nâng cấp (nhiều người yêu cầu nhất trước)</h4>${r.upgrades.map(row).join("")||"<p class=muted>Không có.</p>"}
+      <details><summary class=muted>Prompt gửi Builder</summary><div class=msg>${esc(r.builder_prompt)}</div></details>`;
+  }catch(e){insights.innerHTML="<p class=muted>❌ "+esc(e.message)+"</p>"}
+}
 async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify({app_id:na_id.value,app_name:na_name.value,current_version:na_ver.value,status:na_status.value,fee_required:na_fee.checked})});na_id.value=na_name.value=na_ver.value="";boot()}
 async function exportApps(){
   const r=await fetch("/api/apps/export",{credentials:"include"});
