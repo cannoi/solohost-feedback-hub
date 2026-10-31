@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SoloHost Feedback Hub</title>
+<style>
+body{margin:0;background:#0b1016;color:#eef3f7;font:15px system-ui,Arial}main{max-width:680px;margin:24px auto;padding:16px}
+.card{background:#121a23;border:1px solid #263442;border-radius:18px;padding:20px;margin-bottom:14px}
+h1,h2{margin:0 0 8px}p,small{color:#9fb0bf}label{display:block;margin:12px 0 6px;font-weight:600}
+input,select,textarea{box-sizing:border-box;width:100%;background:#0b1118;color:#fff;border:1px solid #304050;border-radius:10px;padding:11px;font:inherit}
+textarea{min-height:120px}button{width:100%;margin-top:12px;border:0;border-radius:10px;padding:12px;font-weight:700;cursor:pointer;background:#1d4e6b;color:#fff}
+.notice{border-left:3px solid #6cc8ff;padding-left:12px;margin:12px 0}.ok{color:#75e0a2}.err{color:#ff9292}.mono{word-break:break-all;font-family:monospace;font-size:12px}
+</style>
+<style>.paf-made-by{position:fixed;right:8px;bottom:8px;width:min(72px,12vw);max-width:12vw;height:auto;object-fit:contain;opacity:.5;background:transparent;padding:0;border:0;box-shadow:none;filter:none;pointer-events:none;z-index:30}</style></head>
+<body>
+<main>
+<div class="card">
+  <h1>💬 SoloHost Feedback</h1>
+  <p>Gửi ý kiến để app trên SoloHost tốt hơn. Không cần tài khoản.</p>
+  <form id="f">
+    <label>App ID</label><input id="app_id" required placeholder="vd. snake-classic">
+    <label>Tên app</label><input id="app_name" placeholder="Snake Classic">
+    <label>Version</label><input id="version" placeholder="1.2.0">
+    <label>Loại</label>
+    <select id="type">
+      <option value="bug">🐞 Lỗi</option>
+      <option value="idea">💡 Ý tưởng</option>
+      <option value="improvement">⚡ Cải thiện</option>
+      <option value="review">❤️ Đánh giá</option>
+    </select>
+    <label>Điểm (1–5)</label>
+    <select id="rating"><option value="0">Không chấm</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+    <label>Nội dung</label>
+    <textarea id="message" maxlength="4000" required placeholder="Cần sửa / thêm gì?"></textarea>
+    <small>Không gửi mật khẩu, API key, seed phrase.</small>
+    <button>Gửi phản hồi</button>
+    <p id="out"></p>
+  </form>
+</div>
+<div class="card"><h2>🆕 Cập nhật</h2><div id="updates">Đang tải…</div></div>
+<div class="card">
+  <h2>💛 Ủng hộ dự án</h2>
+  <p>Giữ các app SoloHost sống bằng Pi hoặc chuyển khoản.</p>
+  <button type="button" onclick="show('pi')">Pi Wallet</button>
+  <div id="pi" style="display:none"><p>Gửi Pi tới:</p><div class="mono" id="piaddr"></div><button type="button" onclick="copy('piaddr')">Copy address</button></div>
+  <button type="button" onclick="show('mb')">MB Bank</button>
+  <div id="mb" style="display:none"><p id="mbtext"></p><button type="button" onclick="copyText(document.getElementById('mbtext').innerText)">Copy</button></div>
+</div>
+</main>
+
+<button type="button" class="ai-fab" id="aiFab" title="AI · Feedback · Settings" aria-label="AI">
+  <img src="/ai-icon.png" alt="AI" class="ai-fab-img">
+  <span class="ai-fab-dot" id="aiStatusDot"></span>
+  <span class="ai-badge" id="aiBadge" hidden style="display:none"></span>
+</button>
+
+<div class="panel-overlay" id="aiOverlay" hidden style="z-index:400">
+  <div class="panel ai-panel" id="aiPanel">
+    <div class="panel-header">
+      <span class="panel-title">✦ AI</span>
+      <button type="button" class="panel-close" id="aiClose" aria-label="Close">×</button>
+    </div>
+    <div class="panel-tabs" id="panelTabs">
+      <button type="button" class="tab active" data-tab="chat">Chat</button>
+      <button type="button" class="tab" data-tab="feedback">Feedback <span class="tab-badge" id="fbTabBadge" hidden></span></button>
+      <button type="button" class="tab" data-tab="settings">Settings</button>
+      <button type="button" class="tab" data-tab="logs">Logs</button>
+    </div>
+    <div class="tab-pane active" id="tab-chat">
+      <div class="panel-body" id="aiChat"></div>
+      <div class="panel-footer">
+        <input type="text" id="aiInput" placeholder="Hỏi về Hub, feedback, SDK, settings…" autocomplete="off" enterkeyhint="send">
+        <button type="button" id="aiSend" aria-label="Send">➤</button>
+      </div>
+      <div class="ai-status-bar" id="aiStatusBar">AI: checking…</div>
+    </div>
+    <div class="tab-pane" id="tab-feedback">
+      <div class="panel-body fb-body">
+        <div id="fbNotices" class="fb-notices"></div>
+        <div id="fbDonate" class="fb-donate" hidden></div>
+        <label class="fb-label">Type</label>
+        <select id="fbType">
+          <option value="improvement">Improvement</option>
+          <option value="bug">Bug</option>
+          <option value="question">Question</option>
+        </select>
+        <label class="fb-label">Rating</label>
+        <div class="fb-stars" id="fbStars">
+          <button type="button" data-r="1">★</button>
+          <button type="button" data-r="2">★</button>
+          <button type="button" data-r="3">★</button>
+          <button type="button" data-r="4">★</button>
+          <button type="button" data-r="5">★</button>
+        </div>
+        <label class="fb-label">Message</label>
+        <textarea id="fbMessage" rows="3" placeholder="Phản hồi của bạn…" maxlength="2000"></textarea>
+        <p class="fb-hint">Chỉ gửi nội dung bạn nhập. Không cần mật khẩu / API key.</p>
+        <button type="button" class="fb-submit" id="fbSubmit">Send Feedback</button>
+        <p class="fb-status" id="fbStatus"></p>
+      </div>
+    </div>
+    <div class="tab-pane" id="tab-settings">
+      <div class="panel-body settings-body">
+        <label class="fb-label">Provider</label>
+        <select id="setProvider">
+          <option value="none">— None —</option>
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="groq">Groq</option>
+          <option value="mistral">Mistral</option>
+          <option value="xai">xAI</option>
+          <option value="custom">Custom OpenAI-compatible</option>
+          <option value="local">Local OpenAI-compatible</option>
+        </select>
+        <label class="fb-label">API Key</label>
+        <input type="password" id="setApiKey" placeholder="sk-… (không hiện lại sau khi lưu)" autocomplete="off">
+        <p class="fb-hint" id="setKeyHint">Key hiện tại: (chưa có)</p>
+        <label class="fb-label">Base URL <small>(bắt buộc cho Custom / Local)</small></label>
+        <input type="text" id="setBaseUrl" placeholder="https://api.example.com/v1">
+        <label class="fb-label">Model</label>
+        <input type="text" id="setModel" placeholder="auto" value="auto">
+        <label class="fb-label">Mode</label>
+        <select id="setMode">
+          <option value="cloud_enabled">Cloud Enabled</option>
+          <option value="prefer_local">Prefer Local</option>
+          <option value="local_only">Local Only</option>
+          <option value="balanced">Balanced</option>
+          <option value="custom">Custom</option>
+        </select>
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button type="button" class="fb-submit" id="setSave">Save Settings</button>
+          <button type="button" class="ws-btn" id="setTest">Check token</button>
+          <button type="button" class="ws-btn" id="setModels">Load models</button>
+        </div>
+        <p class="fb-status" id="setStatus"></p>
+        <p class="fb-hint" id="setModelsHint"></p>
+      </div>
+    </div>
+    <div class="tab-pane" id="tab-logs">
+      <div class="panel-body logs-body">
+        <div class="logs-toolbar">
+          <button type="button" class="ws-btn" id="logsRefresh">Refresh</button>
+          <button type="button" class="ws-btn" id="logsClear">Clear</button>
+        </div>
+        <pre id="logsView" class="logs-view">Loading…</pre>
+      </div>
+    </div>
+  </div>
+</div>
+<link rel="stylesheet" href="/ai-panel.css">
+<script src="/client/shfh-client.js"></script>
+<script>
+function show(x){const el=document.getElementById(x);el.style.display=el.style.display==="none"?"block":"none"}
+async function copy(id){copyText(document.getElementById(id).textContent)}
+async function copyText(x){try{await navigator.clipboard.writeText(x);alert("Copied")}catch{}}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function cfg(){const r=await fetch("/api/config"),j=await r.json();piaddr.textContent=j.donate.pi_wallet;mbtext.textContent=`${j.donate.mb_bank} — ${j.donate.mb_account} — ${j.donate.mb_name}`}
+async function loadUpdates(){const r=await fetch("/api/updates"),j=await r.json();updates.innerHTML=j.items.length?j.items.slice(0,8).map(x=>`<div class=notice><b>${esc(x.app_name)} ${esc(x.version)}</b><br>${esc(x.notice)}</div>`).join(""):"<p>Chưa có update.</p>"}
+f.onsubmit=async e=>{
+  e.preventDefault();out.textContent="Đang gửi…";
+  try{
+    const hub=SHFH.create({hubUrl:location.origin,appId:app_id.value,appName:app_name.value||app_id.value,version:version.value,platform:"web"});
+    const j=await hub.sendFeedback({type:type.value,message:message.value,rating:Number(rating.value)});
+    out.className="ok";out.textContent="✅ Đã nhận "+j.id+(j.notice?" — "+j.notice.title:"");
+    e.target.reset();
+  }catch(x){out.className="err";out.textContent="❌ "+x.message}
+};
+cfg();loadUpdates();
+</script>
+<script src="/ai-module/ai-module.js"></script>
+<script src="/feedback-module/feedback-module.js"></script>
+<script src="/ai-panel.js"></script>
+<script>
+window.__hostGameContext = function(){ return { screen: "public-feedback" }; };
+window.__hostExecuteActions = function(){};
+</script>
+<img class="paf-made-by" src="/made-by.png" alt="Made with App Builder — Pi SoloHost"></body></html>

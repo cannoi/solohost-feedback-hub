@@ -1,0 +1,14 @@
+services:
+  feedback-hub:
+    build: .
+    container_name: solohost-feedback-hub
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    env_file:
+      - ./config/solohost.env
+    environment:
+      PORT: "8090"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
