@@ -1,0 +1,4 @@
+fields:
+  - name: ADMIN_INITIAL_PASSWORD
+    type: password
+    required: true

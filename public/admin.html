@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SoloHost Feedback Hub</title>
+<style>
+:root{--bg:#0b1016;--card:#121a23;--line:#263442;--muted:#8fa1b0;--acc:#6cc8ff;--ok:#75e0a2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eef3f7;font:14px/1.45 system-ui,Segoe UI,Arial}
+header{display:flex;gap:8px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1016ee;backdrop-filter:blur(8px);z-index:2;flex-wrap:wrap}
+header h1{margin:0;font-size:16px;flex:1}
+button,.btn{border:0;border-radius:8px;padding:8px 12px;background:#1b2a38;color:#fff;cursor:pointer;font-weight:600}
+button.primary{background:#1d4e6b}button.ghost{background:transparent;border:1px solid var(--line)}
+main{display:grid;grid-template-columns:280px 1fr 320px;gap:14px;padding:14px;max-width:1400px;margin:0 auto}
+@media(max-width:980px){main{grid-template-columns:1fr}}
+main[hidden]{display:none}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.muted{color:var(--muted);font-size:12px}
+.tag{display:inline-block;background:#263442;padding:2px 7px;border-radius:999px;margin:2px;font-size:11px}
+.tag.P0{background:#5a1e1e}.tag.P1{background:#5a3a12}.tag.ok{background:#163a28}
+.app{padding:10px;border:1px solid var(--line);border-radius:10px;margin:8px 0}
+.app:hover,.app.on{border-color:var(--acc)}
+.app-select{display:block;width:100%;padding:0;text-align:left;background:transparent;color:inherit;font-weight:400}
+.app-select:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+.app-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.app-remove{margin-top:8px;font-size:12px}
+.app-detail-heading{grid-column:1/-1;display:flex;align-items:flex-start;gap:12px}
+.app-detail-heading .card{flex:1}
+.item{border-top:1px solid var(--line);padding:10px 0}
+.msg{white-space:pre-wrap}
+input,textarea,select{width:100%;margin:6px 0;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0b1118;color:#fff}
+#chatlog{height:220px;overflow:auto;background:#0b1118;border-radius:8px;padding:8px;font-size:13px}
+.kpi{display:flex;gap:8px;flex-wrap:wrap}.kpi b{display:block;font-size:18px}
+.k{flex:1;min-width:70px;background:#0b1118;border-radius:10px;padding:8px;text-align:center}
+#gate{position:fixed;inset:0;background:#0b1016;display:flex;align-items:center;justify-content:center;z-index:9}
+#gate .box{width:min(420px,92vw);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px}
+#appwrap{display:none}#settingsPane{display:none;max-width:720px;margin:14px auto;padding:0 14px 24px}
+label.muted{display:block;margin-top:8px}
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <h2 id="gateTitle">Đăng nhập Feedback Hub</h2>
+    <p class="muted" id="gateHint">Nhập mật khẩu admin. Lần đầu: đặt mật khẩu mới (≥ 6 ký tự).</p>
+    <input id="pw" type="password" placeholder="Mật khẩu" autocomplete="current-password" maxlength="200">
+    <input id="pw2" type="password" placeholder="Nhập lại mật khẩu" style="display:none" maxlength="200">
+    <button class="primary" id="gateBtn" onclick="enter()">Vào dashboard</button>
+    <p id="gateErr" class="muted"></p>
+  </div>
+</div>
+
+<div id="appwrap">
+<header>
+  <h1>🛠 SoloHost Feedback Hub</h1>
+  <button class="ghost" onclick="showDash()">Dashboard</button>
+  <button class="ghost" onclick="showSettings()">⚙ Settings</button>
+  <a class="btn ghost" href="/feedback" target="_blank" rel="noopener">Form công khai</a>
+  <button onclick="logout()">Đăng xuất</button>
+</header>
+<main id="dash">
+  <section>
+    <div class="card">
+      <h3>Apps đang quản lý</h3>
+      <div class="kpi" id="kpis"></div>
+      <div id="appDetails" class="muted" aria-live="polite">Chọn app để xem chi tiết và điền biểu mẫu.</div>
+      <div id="apps">Đang tải…</div>
+      <div id="pendingApps"></div>
+      <h4>Thêm app</h4>
+      <input id="na_id" placeholder="app_id slug, ví dụ snake-classic">
+      <input id="na_name" placeholder="Tên hiển thị">
+      <input id="na_ver" placeholder="Version hiện tại, ví dụ 1.2.0">
+      <select id="na_status"><option value="active">active</option><option value="paused">paused</option><option value="archived">archived</option></select>
+      <label class="muted"><input type="checkbox" id="na_fee"> Yêu cầu phí / ủng hộ</label>
+      <button onclick="addApp()">+ Thêm vào danh sách</button>
+      <button onclick="exportApps()">Xuất file app</button>
+      <label class="muted">Nhập file JSON<input type="file" id="imp" accept="application/json" onchange="importApps(event)"></label>
+    </div>
+  </section>
+  <section id="feedbackSection">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 id="ftitle">Feedback</h3>
+        <span><button onclick="loadInsights()">📊 AI tổng hợp</button> <button onclick="loadPlan()">Kế hoạch nâng cấp</button></span>
+      </div>
+      <div id="plan" class="muted"></div>
+      <div id="insights"></div>
+      <div id="list">Đang tải…</div>
+    </div>
+  </section>
+  <section id="adminToolsSection">
+    <div class="card">
+      <h3>📣 Thông báo &amp; cập nhật · Notices &amp; updates</h3>
+      <p class="muted">Gửi thông báo chung cho mọi app, một app, hoặc publish bản cập nhật. Clients đọc notice qua SDK.</p>
+      <label class="muted">Phạm vi / Scope
+        <select id="nb_scope" onchange="onNoticeScope()">
+          <option value="one" selected>Một app · Single app</option>
+          <option value="all">Toàn bộ app · All managed apps</option>
+          <option value="update">Publish update (một app)</option>
+        </select>
+      </label>
+      <div id="nb_app_row">
+        <select id="nb_app" aria-label="Application"><option value="">Select an active app</option></select>
+        <select id="ua" hidden aria-label="Application for update"><option value="">Select an active app</option></select>
+      </div>
+      <div id="nb_notice_fields">
+        <select id="nb_kind">
+          <option value="announcement">Announcement</option>
+          <option value="update">Update</option>
+          <option value="release">Release</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="security">Security</option>
+          <option value="payment">Payment</option>
+          <option value="order">Order</option>
+          <option value="feedback">Feedback</option>
+        </select>
+        <input id="nb_title" placeholder="Tiêu đề / Title">
+        <textarea id="nb_body" rows="3" placeholder="Nội dung gửi client / Message body"></textarea>
+        <label class="muted">Lịch gửi (optional)<input id="nb_when" type="datetime-local"></label>
+        <label class="muted">Hết hạn (optional)<input id="nb_expires" type="datetime-local"></label>
+        <select id="nb_audience"><option value="all">All app users</option><option value="selected">Selected user IDs</option></select>
+        <div id="nb_recipients_box" hidden><label class="muted">User IDs (one per line)<textarea id="nb_recipients" rows="3"></textarea></label></div>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+          <button type="button" class="ghost" onclick="previewNotice()">Preview</button>
+          <button type="button" class="ghost" onclick="saveNotice()">Save draft</button>
+          <button type="button" class="primary" onclick="sendNoticeNow()">🚀 Gửi ngay · Send now</button>
+        </div>
+      </div>
+      <div id="nb_update_fields" hidden>
+        <input id="uv" placeholder="Version">
+        <textarea id="ui" rows="3" placeholder="Release notes"></textarea>
+        <button type="button" onclick="rewrite()">✨ AI rewrite</button>
+        <textarea id="ur" rows="3" placeholder="Short notice"></textarea>
+        <input id="ul" placeholder="Release URL">
+        <button type="button" class="primary" onclick="publish()">Publish update</button>
+      </div>
+      <p id="nb_msg" class="muted"></p>
+      <p id="um" class="muted"></p>
+      <div id="nb_preview" class="item" aria-live="polite"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <h3>🕰 Notice history</h3>
+        <label class="muted">Days
+          <select id="activityDays" onchange="loadActivityFeed()">
+            <option value="1">1</option>
+            <option value="3">3</option>
+            <option value="7" selected>7</option>
+            <option value="14">14</option>
+            <option value="30">30</option>
+          </select>
+        </label>
+      </div>
+      <div id="noticeHistory" class="muted">Workflow notices…</div>
+      <div id="activityFeed" aria-live="polite"></div>
+    </div>
+  </section>
+</main>
+<main id="appManagement" hidden>
+  <div class="app-detail-heading">
+    <button type="button" class="ghost" onclick="returnToAppList()">← Apps đang quản lý</button>
+    <div id="appManageContext" class="card" aria-live="polite"></div>
+  </div>
+  <section id="appUpdateHistorySection">
+    <div class="card">
+      <h3>Update history</h3>
+      <div id="appUpdateHistory" aria-live="polite"></div>
+    </div>
+  </section>
+</main>
+<div id="settingsPane">
+  <div class="card">
+    <h2>Settings</h2>
+    <p class="muted">Hub ID và Public base URL đã được cấu hình sẵn. Ingest token (nếu triển khai cần) chỉ cấu hình phía máy chủ qua SHFH_INGEST_TOKEN; không nhập hoặc chia sẻ token trong dashboard. <b>API key AI chỉ nhập một nơi:</b> nút robot góc phải → tab Settings.</p>
+    <h3>Donate</h3>
+    <input id="s_pi" placeholder="Pi wallet">
+    <input id="s_bank" placeholder="Ngân hàng">
+    <input id="s_acc" placeholder="Số TK">
+    <input id="s_name" placeholder="Chủ TK">
+    <!-- AI key ONLY in Universal AI Panel (Settings tab) — no second system -->
+    <h3>Đổi mật khẩu đăng nhập</h3>
+    <input id="s_pw" type="password" placeholder="Mật khẩu mới (trống = giữ nguyên)">
+    <button class="primary" onclick="saveSettings()">Lưu settings</button>
+    <p id="s_msg" class="muted"></p>
+  </div>
+</div>
+</div>
+<script src="/admin-app-selector.js"></script>
+<script>
+let currentApp = "";
+let managedApps = [];
+let editingNoticeId = "";
+let needsSetup = false;
+let appLoadVersion = 0;
+const feedbackSection = document.getElementById("feedbackSection");
+const adminToolsSection = document.getElementById("adminToolsSection");
+/* AI provider / API key ONLY in Universal AI Panel (Settings tab). No second system. */
+function H(){return {"Content-Type":"application/json"}}
+async function api(url,opt={}){
+  opt.credentials="include";
+  opt.headers={...(opt.headers||{}),...H()};
+  const r=await fetch(url,opt);
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){
+    if(r.status===401&&!["/api/login","/api/setup","/api/session"].includes(url.split("?")[0])){
+      appwrap.style.display="none";
+      gate.style.display="flex";
+      gateErr.textContent="Admin session expired. Please sign in again.";
+    }
+    throw Error(j.error||("HTTP "+r.status));
+  }
+  return j;
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+async function checkSession(){
+  const s=await fetch("/api/session",{credentials:"include"}).then(r=>r.json());
+  needsSetup=!!s.needs_setup;
+  if(needsSetup){
+    gateTitle.textContent="Đặt mật khẩu admin";
+    gateHint.textContent=s.setup_available
+      ?"First-time setup is available only from a direct localhost connection (127.0.0.1). / Chỉ thiết lập lần đầu từ localhost."
+      :"Connect directly to http://127.0.0.1:8090 to set the first admin password. Proxied or remote setup is blocked. / Hãy truy cập trực tiếp localhost để thiết lập.";
+    pw2.style.display="block";
+    gateBtn.textContent="Tạo mật khẩu & vào";
+    gateBtn.disabled=!s.setup_available;
+  }
+  if(s.authed){openApp();return}
+}
+async function enter(){
+  gateErr.textContent="";
+  try{
+    if(needsSetup){
+      if(pw.value.length<6) throw Error("Mật khẩu tối thiểu 6 ký tự");
+      if(pw.value!==pw2.value) throw Error("Hai mật khẩu không khớp");
+      await api("/api/setup",{method:"POST",body:JSON.stringify({password:pw.value})});
+    }else{
+      await api("/api/login",{method:"POST",body:JSON.stringify({password:pw.value})});
+    }
+    openApp();
+  }catch(e){gateErr.textContent="❌ "+e.message}
+}
+async function logout(){await api("/api/logout",{method:"POST"});location.reload()}
+function openApp(){
+  gate.style.display="none";appwrap.style.display="block";
+  boot().then(()=>{
+    const match=location.hash.match(/^#app\/(.+)$/);
+    if(match){try{selectApp(decodeURIComponent(match[1]))}catch{returnToAppList({updateHistory:false})}}
+  });
+}
+function showDash(){settingsPane.style.display="none";dash.style.display="grid";returnToAppList()}
+async function showSettings(){
+  returnToAppList();dash.style.display="none";settingsPane.style.display="block";
+  const j=await api("/api/settings");
+  const s=j.settings;
+  s_pi.value=s.donate?.pi_wallet||"";s_bank.value=s.donate?.mb_bank||"";s_acc.value=s.donate?.mb_account||"";s_name.value=s.donate?.mb_name||"";
+  // AI key is ONLY configured in the Universal AI Panel (robot button → Settings). No second input here.
+}
+async function saveSettings(){
+  try{
+    const body={donate:{pi_wallet:s_pi.value,mb_bank:s_bank.value,mb_account:s_acc.value,mb_name:s_name.value}};
+    if(s_pw.value) body.admin_password=s_pw.value;
+    await api("/api/settings",{method:"PUT",body:JSON.stringify(body)});
+    s_msg.textContent="✅ Đã lưu. (API key AI chỉ cấu hình trong nút robot → Settings)";
+    s_pw.value="";
+    showSettings();
+  }catch(e){s_msg.textContent="❌ "+e.message}
+}
+
+function isSelectableApp(app){
+  return SHFAAppSelector.isActive(app);
+}
+function isManageableApp(app){
+  return app&&app.integration_status==="approved"&&app.approval_status!=="pending"&&app.status!=="disabled"&&app.status!=="removed";
+}
+function renderAppSelectors(){
+  const choices=SHFAAppSelector.options(managedApps);
+  const options='<option value="">Select an active app</option>'+choices.map(app=>`<option value="${esc(app.app_id)}">${esc(app.label)}</option>`).join("");
+  ua.innerHTML=options;
+  nb_app.innerHTML=options;
+  SHFAAppSelector.synchronize([ua,nb_app],managedApps,currentApp);
+}
+function clearAppForms(){
+  editingNoticeId="";
+  uv.value="";
+  ui.value="";
+  ur.value="";
+  ul.value="";
+  um.textContent="";
+  nb_title.value="";
+  nb_body.value="";
+  nb_when.value="";
+  nb_expires.value="";
+  nb_recipients.value="";
+  nb_audience.value="all";
+  nb_recipients_box.hidden=true;
+  nb_preview.textContent="";
+  nb_msg.textContent="";
+  plan.textContent="";
+  insights.textContent="";
+}
+function returnToAppList({updateHistory=true}={}){
+  if(updateHistory&&location.hash.startsWith("#app/"))history.pushState(null,"",location.pathname+location.search);
+  appLoadVersion+=1;
+  currentApp="";
+  clearAppForms();
+  renderAppSelectors();
+  appManagement.hidden=true;
+  dash.hidden=false;
+  dash.appendChild(feedbackSection);
+  dash.appendChild(adminToolsSection);
+  appDetails.textContent="Chọn app để xem chi tiết và điền biểu mẫu.";
+  appManageContext.textContent="";
+  ftitle.textContent="Feedback";
+  list.textContent="Chọn một app để xem feedback.";
+  noticeHistory.textContent="Chọn một app để xem thông báo.";
+  appUpdateHistory.textContent="Chọn một app để xem lịch sử update.";
+}
+async function boot(){
+  const loadVersion=appLoadVersion;
+  try{
+    const o=await api("/api/admin/overview");
+    if(loadVersion!==appLoadVersion)return;
+    managedApps=o.apps||[];
+    if(currentApp&&!isManageableApp(managedApps.find(app=>app.app_id===currentApp))){
+      returnToAppList();
+      managedApps=o.apps||[];
+    }
+    renderAppSelectors();
+    kpis.innerHTML=`<div class=k><b>${o.totals.feedback}</b><span class=muted>feedback</span></div>
+      <div class=k><b>${o.totals.new}</b><span class=muted>mới</span></div>
+      <div class=k><b>${o.totals.bugs}</b><span class=muted>bug</span></div>
+      <div class=k><b>${o.totals.payments}</b><span class=muted>ủng hộ</span></div>`;
+    apps.innerHTML=managedApps.map(a=>`<div class="app ${a.app_id===currentApp?'on':''}">
+      <button type="button" class="app-select" data-app-id="${esc(a.app_id)}" data-app-name="${esc(a.app_name)}" data-app-version="${esc(a.current_version||'')}" aria-pressed="${a.app_id===currentApp}">
+      <b>${esc(a.app_name)}</b> <span class="muted">${esc(a.app_id)}</span><br>
+      <span class="tag">${esc(a.category||'')}</span>
+      <span class="tag">FB ${a.feedback_count}</span>
+      <span class="tag ${a.open_bugs?'P0':''}">bug ${a.open_bugs}</span>
+      <span class="tag">★ ${a.avg_rating||'-'}</span>
+      <span class="tag">heat ${a.heat}</span>
+      ${a.unpaid?'<span class="tag P1">chưa đóng phí</span>':''}
+      ${a.supporters?'<span class="tag ok">supporters '+a.supporters+'</span>':''}
+      </button>
+      <button type="button" class="ghost app-remove" data-remove-app="${esc(a.app_id)}">🗑 Xóa khỏi danh sách</button>
+    </div>`).join("")||"<p class=muted>Chưa có app.</p>";
+    pendingApps.innerHTML=o.pending_apps?.length?`<h4>⏳ Pending approval / App chờ duyệt</h4>${o.pending_apps.map(a=>`<div class="app pending-app">
+      <b>${esc(a.app_name||a.app_id)}</b> <span class="muted">${esc(a.app_id)}</span><br>
+      <span class="tag">FB ${a.feedback_count||0}</span><span class="tag">pending</span>
+      <div class="app-actions"><button type="button" class="primary" data-approve-app="${esc(a.app_id)}">✅ Approve / Duyệt</button>
+      <button type="button" class="ghost app-remove" data-remove-app="${esc(a.app_id)}">🗑 Remove / Xóa</button></div>
+    </div>`).join("")}`:"";
+    document.querySelectorAll("[data-approve-app]").forEach(button=>button.addEventListener("click",()=>approveApp(button.dataset.approveApp)));
+    document.querySelectorAll("[data-remove-app]").forEach(button=>button.addEventListener("click",event=>{event.stopPropagation();removeApp(button.dataset.removeApp)}));
+    document.querySelectorAll(".app-select").forEach(button=>button.addEventListener("click",()=>selectApp(button.dataset.appId)));
+    await Promise.all([loadList(loadVersion),loadNoticeHistory(loadVersion),currentApp?loadUpdateHistory(loadVersion):Promise.resolve()]);
+  }catch(e){if(loadVersion===appLoadVersion)apps.textContent="❌ "+e.message}
+}
+async function selectApp(id){
+  const app=managedApps.find(item=>item.app_id===id);
+  if(!isManageableApp(app)){
+    nb_msg.textContent="Only approved, managed applications can be opened.";
+    um.textContent="Only approved, managed applications can be opened.";
+    return;
+  }
+  const changed=currentApp!==id;
+  const loadVersion=++appLoadVersion;
+  currentApp=id;if(nb_scope&&nb_scope.value==="all"){nb_scope.value="one"}if(nb_app)nb_app.value=id;if(ua)ua.value=id;if(typeof onNoticeScope==="function")onNoticeScope();
+  const nextHash="#app/"+encodeURIComponent(id);
+  if(location.hash!==nextHash)history.pushState(null,"",location.pathname+location.search+nextHash);
+  if(changed)clearAppForms();
+  uv.value=app.current_version||"";
+  renderAppSelectors();
+  const details=`<b>${esc(app.app_name||app.app_id)}</b> · ${esc(app.app_id)}<br>Version ${esc(app.current_version||"—")} · ${esc(app.status||app.integration_status||"")} · ${esc(app.category||"")}`;
+  appDetails.innerHTML=details;
+  appManageContext.innerHTML=details;
+  ftitle.textContent="Feedback · "+id;
+  dash.hidden=true;
+  appManagement.hidden=false;
+  appManagement.appendChild(feedbackSection);
+  appManagement.appendChild(adminToolsSection);
+  list.textContent="Loading feedback…";
+  noticeHistory.textContent="Loading notifications…";
+  appUpdateHistory.textContent="Loading update history…";
+  await boot();
+  if(loadVersion!==appLoadVersion||currentApp!==id)return;
+  const refreshed=managedApps.find(item=>item.app_id===id);
+  if(!isManageableApp(refreshed)){returnToAppList();return}
+  appManageContext.innerHTML=`<b>${esc(refreshed.app_name||refreshed.app_id)}</b> · ${esc(refreshed.app_id)}<br>Version ${esc(refreshed.current_version||"—")} · ${esc(refreshed.status||refreshed.integration_status||"")} · ${esc(refreshed.category||"")}`;
+}
+ua.addEventListener("change",()=>{if(ua.value)selectApp(ua.value)});
+nb_app.addEventListener("change",()=>{if(nb_app.value)selectApp(nb_app.value)});
+window.addEventListener("popstate",()=>{
+  const match=location.hash.match(/^#app\/(.+)$/);
+  if(match){try{selectApp(decodeURIComponent(match[1]))}catch{returnToAppList({updateHistory:false})}}
+  else returnToAppList({updateHistory:false});
+});
+function uuid(){
+  var c=globalThis.crypto;
+  if(c&&typeof c.randomUUID==="function"){
+    try{return c.randomUUID()}catch(e){}
+  }
+  if(c&&typeof c.getRandomValues==="function"){
+    try{
+      var b=new Uint8Array(16);c.getRandomValues(b);
+      b[6]=(b[6]&0x0f)|0x40;b[8]=(b[8]&0x3f)|0x80;
+      var h=Array.from(b,function(x){return x.toString(16).padStart(2,"0")}).join("");
+      return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);
+    }catch(e){}
+  }
+  return "id-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12);
+}
+function onNoticeScope(){
+  const scope=String(nb_scope.value||"one");
+  nb_notice_fields.hidden=scope==="update";
+  nb_update_fields.hidden=scope!=="update";
+  nb_app_row.style.display=scope==="all"?"none":"";
+  if(scope==="one" || scope==="update"){
+    if(currentApp && !nb_app.value) nb_app.value=currentApp;
+    if(scope==="update"){ua.hidden=false;ua.value=nb_app.value||currentApp||ua.value}
+    else {ua.hidden=true}
+  } else {
+    ua.hidden=true;
+  }
+}
+function noticeTargetAppId(){
+  // Only broadcast when user explicitly chose "all"
+  if(String(nb_scope.value||"") === "all") return "*";
+  const id = String(nb_app.value || currentApp || "").trim();
+  if(!id || id === "*" || id === "all") return "";
+  return id;
+}
+function noticePayload(){
+  const selected=nb_audience.value==="selected";
+  const recipients=nb_recipients.value.split(/\r?\n/).map(value=>value.trim()).filter(Boolean);
+  const date=value=>value?new Date(value).toISOString():null;
+  return {app_id:noticeTargetAppId(),type:nb_kind.value,title:nb_title.value,body:nb_body.value,audience:selected?"selected":"all",recipient_ids:selected?recipients:[],scheduled_at:date(nb_when.value),expires_at:date(nb_expires.value)};
+}
+function renderNoticePreview(item){
+  nb_preview.innerHTML=`<b>${esc(item.title)}</b> <span class="tag">${esc(item.type)}</span><p>${esc(item.body)}</p><div class="muted">App ${esc(item.application_id||item.app_id)} · Audience ${esc(item.audience)}${item.recipient_count===null?"":` · ${esc(item.recipient_count)} recipients`} · Scheduled ${esc(item.scheduled_at)} · Not delivered</div>`;
+}
+async function previewNotice(){
+  try{
+    const payload=noticePayload();
+    if(payload.app_id==="*"){nb_preview.innerHTML=`<b>${esc(payload.title||"(no title)")}</b> <span class="tag">${esc(payload.type)}</span><p>${esc(payload.body||"")}</p><div class="muted">Scope: ALL managed apps · Preview only</div>`;nb_msg.textContent="Preview only (all apps). Nothing has been sent.";return}
+    if(!payload.app_id||!isSelectableApp(managedApps.find(app=>app.app_id===payload.app_id)))throw Error("Select an approved, active application first");
+    const result=await api("/api/admin/notices/preview",{method:"POST",body:JSON.stringify(payload)});
+    renderNoticePreview(result.preview);
+    nb_msg.textContent="Preview only. Nothing has been sent.";
+  }catch(e){nb_msg.textContent="❌ "+e.message}
+}
+async function saveNotice(){
+  try{
+    const payload=noticePayload();
+    if(payload.app_id==="*")throw Error("Save draft requires a single app. Use Send now for all apps.");
+    if(!payload.app_id||!isSelectableApp(managedApps.find(app=>app.app_id===payload.app_id)))throw Error("Select an approved, active application first");
+    const method=editingNoticeId?"PUT":"POST";
+    const url=editingNoticeId?"/api/admin/notices/"+encodeURIComponent(editingNoticeId):"/api/admin/notices";
+    const result=await api(url,{method,body:JSON.stringify({...payload,idempotency_key:"admin-"+uuid()})});
+    editingNoticeId=result.item.notification_id;
+    nb_msg.textContent="Draft saved. Use Approve/Publish buttons, or Send now.";
+    await loadNoticeHistory();
+    await loadActivityFeed();
+  }catch(e){nb_msg.textContent="❌ "+e.message}
+}
+async function sendNoticeNow(){
+  try{
+    if(typeof onNoticeScope==="function") onNoticeScope();
+    const payload=noticePayload();
+    if(!payload.title?.trim()||!payload.body?.trim())throw Error("Title and body are required");
+    if(payload.app_id==="*"){
+      if(String(nb_scope.value)!=="all")throw Error("Scope is not All apps — pick a single app or set scope to All apps");
+      if(!confirm("Send this notice to ALL managed apps?")) { nb_msg.textContent="Cancelled."; return; }
+    } else if(!payload.app_id||!isSelectableApp(managedApps.find(app=>app.app_id===payload.app_id))){
+      throw Error("Select an approved, active application first");
+    }
+    nb_msg.textContent=payload.app_id==="*"?"Sending to all apps…":("Sending to "+payload.app_id+"…");
+    const result=await api("/api/admin/notices/send",{method:"POST",body:JSON.stringify({...payload,idempotency_key:"send-"+uuid()})});
+    nb_msg.textContent=payload.app_id==="*"
+      ? (`✅ Sent ${result.sent||0}/${result.total||0} apps. Clients see notices on next sync.`)
+      : (`✅ Sent to ${payload.app_id}. Clients see notices on next sync.`);
+    editingNoticeId="";
+    await loadNoticeHistory();
+    await loadActivityFeed();
+  }catch(e){nb_msg.textContent="❌ "+e.message}
+}
+async function loadActivityFeed(){
+  try{
+    const days=Number(document.getElementById("activityDays")?.value||7)||7;
+    const result=await api("/api/admin/activity?days="+encodeURIComponent(days));
+    const items=result.items||[];
+    const el=document.getElementById("activityFeed");
+    if(!el)return;
+    el.innerHTML=items.map(item=>`<article class="item"><span class="tag">${esc(item.kind)}</span> <b>${esc(item.title||item.type||"")}</b><div class="muted">${esc(item.app_id||"—")} · ${esc(item.created_at||"")}${item.status?` · ${esc(item.status)}`:""}</div><p class="muted">${esc(String(item.body||"").slice(0,240))}</p></article>`).join("")||`<p class="muted">No events in the last ${days} days.</p>`;
+  }catch(e){const el=document.getElementById("activityFeed");if(el)el.textContent="❌ "+e.message}
+}
+async function loadNoticeHistory(loadVersion=appLoadVersion){
+  try{
+    const appId=currentApp||"";
+    const query=appId?"?app_id="+encodeURIComponent(appId):"";
+    const result=await api("/api/admin/notices"+query);
+    if(loadVersion!==appLoadVersion)return;
+    noticeHistory.innerHTML=(result.items||[]).slice(0,30).map(item=>{
+      const actions=item.workflow_state==="draft"?`<button type="button" data-notice-action="approve" data-id="${esc(item.notification_id)}" data-app="${esc(item.application_id)}">Approve</button><button type="button" data-notice-action="publish" data-id="${esc(item.notification_id)}" data-app="${esc(item.application_id)}">Publish</button>`:item.workflow_state==="approved"?`<button type="button" data-notice-action="publish" data-id="${esc(item.notification_id)}" data-app="${esc(item.application_id)}">Publish</button>`:item.workflow_state==="published"?`<button type="button" data-notice-action="cancel" data-id="${esc(item.notification_id)}" data-app="${esc(item.application_id)}">Cancel</button>`:"";
+      return `<article class="item"><b>${esc(item.title)}</b> <span class="tag">${esc(item.workflow_state)}</span><div class="muted">${esc(item.application_id)} · ${esc(item.type)}</div><div class="app-actions">${actions}</div></article>`;
+    }).join("")||"<p class=muted>No workflow notices yet.</p>";
+    document.querySelectorAll("[data-notice-action]").forEach(button=>button.addEventListener("click",()=>handleNoticeAction(button.dataset.id,button.dataset.noticeAction,button.dataset.app||currentApp)));
+    await loadActivityFeed();
+  }catch(e){noticeHistory.textContent="❌ "+e.message}
+}
+async function handleNoticeAction(id,action,appId=currentApp){
+  const selectionAtStart=currentApp;
+  if(selectionAtStart&&selectionAtStart!==appId)return;
+  try{
+    if(action==="edit"){
+      const result=await api("/api/admin/notices?app_id="+encodeURIComponent(appId));
+      if(selectionAtStart!==currentApp)return;
+      const item=result.items.find(notice=>notice.notification_id===id);
+      if(!item)throw Error("Notice not found");
+      await selectApp(item.application_id);
+      editingNoticeId=id;currentApp=item.application_id;ua.value=item.application_id;nb_app.value=item.application_id;nb_title.value=item.title;nb_body.value=item.body;nb_kind.value=item.type;nb_audience.value=item.audience;nb_recipients.value=(item.recipient_ids||[]).join("\n");
+      nb_when.value=item.scheduled_at?new Date(new Date(item.scheduled_at).getTime()-new Date(item.scheduled_at).getTimezoneOffset()*60000).toISOString().slice(0,16):"";
+      nb_expires.value=item.expires_at?new Date(new Date(item.expires_at).getTime()-new Date(item.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16):"";
+      nb_recipients_box.hidden=nb_audience.value!=="selected";return;
+    }
+    if(action==="approve"||action==="publish"||action==="cancel"){
+      await api(`/api/admin/notices/${encodeURIComponent(id)}/${action}?app_id=${encodeURIComponent(appId)}`,{method:"POST"});
+      if(selectionAtStart!==currentApp)return;
+      await loadNoticeHistory();
+      return;
+    }
+    const result=await api(`/api/admin/notices/${encodeURIComponent(id)}/preview?app_id=${encodeURIComponent(appId)}`,{method:"POST"});
+    if(selectionAtStart!==currentApp)return;
+    renderNoticePreview(result.preview);
+    nb_msg.textContent="Preview only. Nothing has been sent.";
+  }catch(e){if(selectionAtStart===currentApp)nb_msg.textContent="❌ "+e.message}
+}
+nb_audience.addEventListener("change",()=>{nb_recipients_box.hidden=nb_audience.value!=="selected"});
+async function loadList(loadVersion=appLoadVersion){
+  const appId=currentApp;
+  const q=appId?("?app_id="+encodeURIComponent(appId)):"";
+  const j=await api("/api/feedback"+q);
+  if(loadVersion!==appLoadVersion||appId!==currentApp)return;
+  list.innerHTML=j.items.map(x=>`<div class=item>
+    <div class=muted>${esc(x.id)} · ${esc(x.created_at)} · ${esc(x.app_name)} ${esc(x.version)}</div>
+    <span class=tag>${esc(x.type)}</span><span class="tag ${esc(x.ai?.priority||'')}">${esc(x.ai?.priority||'')}</span>
+    <span class=tag>${esc(x.ai?.sentiment||'')}</span><span class=tag>${esc(x.status)}</span>
+    <div class=msg>${esc(x.message)}</div>
+    <div class=muted>${esc(x.ai?.suggested_action||'')}</div>
+    <select onchange="status('${encodeURIComponent(x.id)}',this.value,'${esc(x.app_id||appId||"")}')">
+      ${["NEW","REVIEWING","PLANNED","IN_PROGRESS","DONE","DECLINED"].map(s=>`<option ${s===x.status?"selected":""}>${s}</option>`).join("")}
+    </select>
+  </div>`).join("")||"<p class=muted>Không có feedback.</p>";
+}
+async function status(id,s,appId=currentApp){
+  try{
+    await api("/api/feedback/"+id+"?app_id="+encodeURIComponent(appId),{method:"PATCH",body:JSON.stringify({status:s})});
+    if(appId===currentApp)await loadList();
+  }catch(e){if(appId===currentApp)list.textContent="❌ "+e.message}
+}
+async function loadUpdateHistory(loadVersion=appLoadVersion){
+  const appId=currentApp;
+  try{
+    const result=await api("/api/updates/all?app_id="+encodeURIComponent(appId));
+    if(loadVersion!==appLoadVersion||appId!==currentApp)return;
+    appUpdateHistory.innerHTML=result.items.map(item=>{
+      let releaseUrl="";
+      try{
+        const url=new URL(item.release_url);
+        if(["http:","https:"].includes(url.protocol)&&!url.username&&!url.password)releaseUrl=url.toString();
+      }catch{}
+      return `<article class="item"><b>${esc(item.version)}</b> <span class="tag">${item.published?"Published":"Draft"}</span><div class="muted">${esc(item.created_at)} · ${esc(item.app_name)} · ${esc(item.app_id)}</div><p>${esc(item.notice)}</p>${item.release_notes?`<details><summary>Release notes</summary><div class="msg">${esc(item.release_notes)}</div></details>`:""}${releaseUrl?`<a href="${esc(releaseUrl)}" target="_blank" rel="noopener noreferrer">Release URL</a>`:item.release_url?`<div class="muted">${esc(item.release_url)}</div>`:""}</article>`;
+    }).join("")||"<p class=muted>No updates yet.</p>";
+  }catch(e){if(loadVersion===appLoadVersion&&appId===currentApp)appUpdateHistory.textContent="❌ "+e.message}
+}
+async function loadInsights(){
+  const appId=currentApp,loadVersion=appLoadVersion;
+  insights.innerHTML=`<p class=muted>Đang tổng hợp phản hồi ${appId?esc(appId):"toàn bộ"}…</p>`;
+  try{
+    const j=await api("/api/ai/classify",{method:"POST",body:JSON.stringify({app_id:appId||undefined})});
+    if(loadVersion!==appLoadVersion||appId!==currentApp)return;
+    const r=j.report, t=r.totals;
+    const row=x=>`<div class=item><span class="tag ${esc(x.priority)}">${esc(x.priority)}</span><b>#${x.rank} ${esc(x.title)}</b>
+      <div class=muted>${x.count} phản hồi · ${x.users} người${x.avg_rating?" · ★ "+x.avg_rating:""}${x.recent?" · "+x.recent+" trong 7 ngày":""}${x.apps.length>1?" · "+x.apps.length+" app":""}</div>
+      ${x.summary?`<div>${esc(x.summary)}</div>`:""}<div class=muted>→ ${esc(x.suggested_action)}</div>
+      ${(x.samples||[]).map(m=>`<div class=muted>“${esc(m)}”</div>`).join("")}</div>`;
+    insights.innerHTML=`<h4>📊 Tổng hợp ${currentApp?esc(currentApp):"tất cả app"} — ${t.analyzed} phản hồi${t.praise?`, ${t.praise} khen`:""}${t.avg_rating?`, ★ ${t.avg_rating}`:""}</h4>
+      ${j.ai_note?`<p class=muted>${esc(j.ai_note)}</p>`:""}
+      <h4>🔧 Cần sửa (nhiều người báo nhất trước)</h4>${r.fixes.map(row).join("")||"<p class=muted>Không có.</p>"}
+      <h4>🚀 Đề xuất nâng cấp (nhiều người yêu cầu nhất trước)</h4>${r.upgrades.map(row).join("")||"<p class=muted>Không có.</p>"}
+      <details><summary class=muted>Prompt gửi Builder</summary><div class=msg>${esc(r.builder_prompt)}</div></details>`;
+  }catch(e){if(loadVersion===appLoadVersion&&appId===currentApp)insights.innerHTML="<p class=muted>❌ "+esc(e.message)+"</p>"}
+}
+async function addApp(){await api("/api/apps",{method:"POST",body:JSON.stringify({app_id:na_id.value,app_name:na_name.value,current_version:na_ver.value,status:na_status.value,fee_required:na_fee.checked})});na_id.value=na_name.value=na_ver.value="";boot()}
+async function approveApp(id){try{await api("/api/apps/"+encodeURIComponent(id)+"/approve",{method:"POST"});boot()}catch(e){alert("Could not approve app: "+e.message)}}
+async function removeApp(id){
+  const prompt="Remove "+id+" from the app list? Its credentials will be disabled; existing feedback and history will be retained. / Xóa "+id+" khỏi danh sách? Credential sẽ bị vô hiệu hóa; phản hồi và lịch sử vẫn được giữ.";
+  if(!confirm(prompt))return;
+  try{
+    await api("/api/apps/"+encodeURIComponent(id),{method:"DELETE"});
+    if(currentApp===id)currentApp="";
+    boot();
+  }catch(e){alert("Could not remove app: "+e.message)}
+}
+async function exportApps(){
+  const r=await fetch("/api/apps/export",{credentials:"include"});
+  if(!r.ok){alert("Không xuất được");return}
+  const blob=await r.blob(); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="solohost-apps.json"; a.click();
+}
+async function importApps(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  try{
+    const json=JSON.parse(await f.text());
+    const replace=confirm("OK = ghi đè danh sách. Cancel = gộp/cập nhật.");
+    json.replace=replace;
+    await api("/api/apps/import",{method:"POST",body:JSON.stringify(json)});
+    boot();
+  }catch(e){alert(e.message)}
+  ev.target.value="";
+}
+async function loadPlan(){
+  if(!currentApp){plan.textContent="Chọn một app trước.";return}
+  const appId=currentApp,loadVersion=appLoadVersion;
+  const j=await api("/api/apps/"+encodeURIComponent(appId)+"/plan");
+  if(loadVersion!==appLoadVersion||appId!==currentApp)return;
+  plan.innerHTML=`<b>${esc(j.plan.headline)}</b><pre class=muted>${esc(j.plan.builder_prompt)}</pre>`;
+}
+async function rewrite(){try{const appId=currentApp,app=managedApps.find(item=>item.app_id===appId);if(!isSelectableApp(app))throw Error("Select an approved, active application first");um.textContent="AI rewriting…";const j=await api("/api/ai/rewrite",{method:"POST",body:JSON.stringify({input:`App: ${app.app_name||app.app_id}\nVersion: ${uv.value}\n${ui.value}`})});if(appId!==currentApp)return;ur.value=j.text;um.textContent="✅ Review rồi mới Publish."}catch(e){um.textContent="❌ "+e.message}}
+async function publish(){
+  const appId=(ua.value||nb_app.value||currentApp||"").trim(),app=managedApps.find(item=>item.app_id===appId);
+  const notice=ur.value.trim()||ui.value.trim();
+  if(!isSelectableApp(app)){um.textContent="❌ Select an approved, active application first.";return}
+  if(!uv.value.trim()||!notice){um.textContent="❌ Version and release notes / short notice are required.";return}
+  try{
+    const result=await api("/api/updates",{method:"POST",body:JSON.stringify({app_id:appId,version:uv.value,notice,release_notes:ui.value,release_url:ul.value,published:true})});
+    um.textContent="✅ Published for "+result.item.app_name+".";
+    await loadUpdateHistory();
+    await loadActivityFeed();
+  }catch(e){um.textContent="❌ "+e.message}
+}
+/* ask() removed — use Universal AI Panel (robot FAB) only */
+checkSession();
+pw.addEventListener("keydown",e=>{if(e.key==="Enter")enter()});
+</script>
+<button type="button" class="ai-fab" id="aiFab" title="AI · Feedback · Settings" aria-label="AI">
+      <img src="/ai-icon.png" alt="AI" class="ai-fab-img">
+      <span class="ai-fab-dot" id="aiStatusDot"></span>
+      <span class="ai-badge" id="aiBadge" hidden style="display:none"></span>
+    </button>
+  </div>
+
+  <!-- Unified AI Panel: Chat | Feedback | Settings | Logs -->
+  <div class="panel-overlay" id="aiOverlay" hidden style="z-index:400">
+    <div class="panel ai-panel" id="aiPanel">
+      <div class="panel-header">
+        <span class="panel-title">✦ AI</span>
+        <label class="sr" for="aiPanelLanguage">Language</label><select id="aiPanelLanguage" class="ai-panel-language" aria-label="Language"><option value="en">EN</option><option value="vi">VI</option></select>
+        <button type="button" class="panel-close" id="aiClose" aria-label="Close">×</button>
+      </div>
+      <div class="panel-tabs" id="panelTabs">
+        <button type="button" class="tab active" data-tab="chat">Chat</button>
+        <button type="button" class="tab" data-tab="feedback">Feedback <span class="tab-badge" id="fbTabBadge" hidden></span></button>
+        <button type="button" class="tab" data-tab="settings">Settings</button>
+        <button type="button" class="tab" data-tab="logs">Logs</button>
+      </div>
+
+      <!-- Chat tab -->
+      <div class="tab-pane active" id="tab-chat">
+        <div class="panel-body" id="aiChat"></div>
+        <div class="panel-footer">
+          <input type="text" id="aiInput" placeholder="Hỏi về Hub, feedback, SDK, settings…" autocomplete="off" enterkeyhint="send">
+          <button type="button" id="aiSend" aria-label="Send">➤</button>
+        </div>
+        <div class="ai-status-bar" id="aiStatusBar">AI: checking…</div>
+      </div>
+
+      <!-- Feedback tab -->
+      <div class="tab-pane" id="tab-feedback">
+        <div class="panel-body fb-body">
+          <div id="fbNotices" class="fb-notices"></div>
+          <div id="fbDonate" class="fb-donate" hidden></div>
+          <label class="fb-label">Type</label>
+          <select id="fbType">
+            <option value="improvement">Improvement</option>
+            <option value="bug">Bug</option>
+            <option value="idea">Question</option>
+          </select>
+          <label class="fb-label">Rating</label>
+          <div class="fb-stars" id="fbStars">
+            <button type="button" data-r="1">★</button>
+            <button type="button" data-r="2">★</button>
+            <button type="button" data-r="3">★</button>
+            <button type="button" data-r="4">★</button>
+            <button type="button" data-r="5">★</button>
+          </div>
+          <label class="fb-label">Message</label>
+          <textarea id="fbMessage" rows="3" placeholder="Phản hồi của bạn…" maxlength="2000"></textarea>
+          <p class="fb-hint">Chỉ gửi nội dung bạn nhập. Không cần mật khẩu / API key.</p>
+          <button type="button" class="fb-submit" id="fbSubmit">Send Feedback</button>
+          <p class="fb-status" id="fbStatus"></p>
+        </div>
+      </div>
+
+      <!-- Settings tab -->
+      <div class="tab-pane" id="tab-settings">
+        <div class="panel-body settings-body">
+          <label class="fb-label">Provider</label>
+          <select id="setProvider">
+            <option value="none">— None —</option>
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="groq">Groq</option>
+            <option value="mistral">Mistral</option>
+            <option value="xai">xAI</option>
+            <option value="custom">Custom OpenAI-compatible</option>
+            <option value="local">Local OpenAI-compatible</option>
+          </select>
+          <label class="fb-label">API Key</label>
+          <input type="password" id="setApiKey" placeholder="sk-… (không hiện lại sau khi lưu)" autocomplete="off">
+          <p class="fb-hint" id="setKeyHint">Key hiện tại: (chưa có)</p>
+          <label class="fb-label">Base URL <small>(bắt buộc cho Custom / Local)</small></label>
+          <input type="text" id="setBaseUrl" placeholder="https://api.example.com/v1">
+          <label class="fb-label">Model</label>
+          <input type="text" id="setModel" placeholder="auto" value="auto">
+          <label class="fb-label">Mode</label>
+          <select id="setMode">
+            <option value="cloud_enabled">Cloud Enabled</option>
+            <option value="prefer_local">Prefer Local</option>
+            <option value="local_only">Local Only</option>
+            <option value="balanced">Balanced</option>
+            <option value="custom">Custom</option>
+          </select>
+          <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button type="button" class="fb-submit" id="setSave">Save Settings</button>
+            <button type="button" class="ws-btn" id="setTest">Check token</button>
+            <button type="button" class="ws-btn" id="setModels">Load models</button>
+          </div>
+          <p class="fb-status" id="setStatus"></p>
+          <p class="fb-hint" id="setModelsHint"></p>
+        </div>
+      </div>
+
+      <!-- Logs tab -->
+      <div class="tab-pane" id="tab-logs">
+        <div class="panel-body logs-body">
+          <div class="logs-toolbar">
+            <button type="button" class="ws-btn" id="logsRefresh">Refresh</button>
+            <button type="button" class="ws-btn" id="logsClear">Clear</button>
+          </div>
+          <pre id="logsView" class="logs-view">Loading…</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+<link rel="stylesheet" href="/ai-panel.css">
+<style>#aiFab{display:flex!important;visibility:visible!important;opacity:1!important;z-index:399!important}#aiFab[hidden]{display:none!important}</style>
+<script src="/ai-module/ai-module.js"></script>
+<script src="/feedback-module/feedback-module.js"></script>
+<script src="/ai-panel.js"></script>
+<script>
+// Adapt for Feedback Hub admin context
+window.__hostGameContext = window.gameContext || function(){ return { screen: "admin", currentApp: (typeof currentApp!=="undefined"?currentApp:null) }; };
+window.__hostExecuteActions = window.executeActions || function(actions){
+  (actions||[]).forEach(a=>{
+    if(a.action==="open_tab" || a.name==="open_tab"){
+      const tab = (a.value||a.args&&a.args.value||"chat");
+      const btn = document.querySelector(`.tab[data-tab="${tab}"]`);
+      if(btn) btn.click();
+    }
+  });
+};
+</script>
+
+</body></html>

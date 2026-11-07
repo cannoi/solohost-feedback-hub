@@ -1,0 +1,57 @@
+services:
+  feedback-hub:
+    build: .
+    container_name: solohost-feedback-hub
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8090}:8090"
+      - "127.0.0.1:${SETUP_HOST_PORT:-8091}:8091"
+      - "${HTTPS_HOST_PORT:-8443}:8443"
+      - "${HTTP_REDIRECT_PORT:-8080}:8080"
+    environment:
+      PORT: "8090"
+      SETUP_PORT: "8091"
+      DATA_DIR: /app/data
+      HTTPS_GATEWAY: "${HTTPS_GATEWAY:-1}"
+      HTTPS_PORT: "8443"
+      HTTP_PORT: "8080"
+      LISTEN_HOST: "0.0.0.0"
+      PUBLIC_HOSTNAME: "${PUBLIC_HOSTNAME:-}"
+      CADDY_EMAIL: "${CADDY_EMAIL:-}"
+      HUB_ID: "${HUB_ID:-SHFH-CANNOI-0905428801}"
+      ADMIN_INITIAL_PASSWORD: "${ADMIN_INITIAL_PASSWORD:-}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
+      INGEST_TOKEN: "${INGEST_TOKEN:-}"
+      SHFH_INGEST_TOKEN: "${SHFH_INGEST_TOKEN:-}"
+      HUB_ENCRYPTION_KEY: "${HUB_ENCRYPTION_KEY:-}"
+      WEBHOOK_ENCRYPTION_KEY: "${WEBHOOK_ENCRYPTION_KEY:-}"
+      FEE_MOCK_PAYMENTS: "${FEE_MOCK_PAYMENTS:-false}"
+      PI_WALLET: "${PI_WALLET:-}"
+      MB_BANK: "${MB_BANK:-}"
+      MB_ACCOUNT: "${MB_ACCOUNT:-}"
+      MB_NAME: "${MB_NAME:-}"
+      AI_PROVIDER: "${AI_PROVIDER:-}"
+      AI_MODEL: "${AI_MODEL:-}"
+      AI_API_KEY: "${AI_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      XAI_API_KEY: "${XAI_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-}"
+      LMSTUDIO_BASE_URL: "${LMSTUDIO_BASE_URL:-}"
+      LOCAL_AI_BASE_URL: "${LOCAL_AI_BASE_URL:-}"
+      AI_BASE_URL: "${AI_BASE_URL:-}"
+      AI_MODE: "${AI_MODE:-}"
+      AI_EXTRA_HEADERS: "${AI_EXTRA_HEADERS:-}"
+      AI_TIMEOUT_MS: "${AI_TIMEOUT_MS:-}"
+      SHFH_HUB_ID: "${SHFH_HUB_ID:-}"
+      SHFH_HUB_URL: "${SHFH_HUB_URL:-}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ./data:/app/data

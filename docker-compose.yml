@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  feedback-hub:
+    image: ghcr.io/cannoi/solohost-feedback-hub:latest
+    container_name: solohost-feedback-hub
+    restart: unless-stopped
+
+    ports:
+      - target: 8090
+        published: 8090
+      - target: 8091
+        published: 8091
+        host_ip: 127.0.0.1
+      - target: 8443
+        published: 8443
+
+    environment:
+      PORT: "8090"
+      SETUP_PORT: "8091"
+      DATA_DIR: /app/data
+      HUB_ID: "SHFH-CANNOI-SOLOHOST"
+      ADMIN_INITIAL_PASSWORD: "${ADMIN_INITIAL_PASSWORD}"
+      FEE_MOCK_PAYMENTS: "false"
+      PUBLIC_BASE_URL: "http://14.176.78.46:8090"
+      HTTPS_GATEWAY: "1"
+      HTTPS_PORT: "8443"
+      LISTEN_HOST: "0.0.0.0"
+
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,11 @@
+{
+  "app": "solohost-feedback-hub",
+  "version": "2.5.1",
+  "repository": "https://github.com/cannoi/solohost-feedback-hub.git",
+  "port": 8090,
+  "https_port": 8443,
+  "setup_port": 8091,
+  "hub_id": "SHFH-CANNOI-0905428801",
+  "public_base_url": "http://14.176.78.46:8090",
+  "notes": "Non-secret SoloHost metadata. Install UI only requires Admin login password. Hub ID and public URL are preconfigured."
+}
